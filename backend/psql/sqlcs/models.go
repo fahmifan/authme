@@ -14,7 +14,10 @@ import (
 type User struct {
 	ID           uuid.UUID
 	Email        string
+	Name         string
 	PasswordHash string
+	VerifyToken  string
+	Status       string
 	LastLoginAt  sql.NullTime
 	Archived     bool
 	CreatedAt    time.Time

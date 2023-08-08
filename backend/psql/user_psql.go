@@ -33,16 +33,10 @@ func (psql UserReadWriter) FindByPID(ctx context.Context, pid string) (authme.Us
 		return authme.User{}, fmt.Errorf("PSQL: FindUserByEmail: %w", err)
 	}
 
-	authUser := authme.User{
-		GUID:         xuser.ID.String(),
-		PID:          xuser.Email,
-		PasswordHash: xuser.PasswordHash,
-	}
-
-	return authUser, nil
+	return UserFromSQL(xuser), nil
 }
 
-func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (err error) {
+func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (_ authme.User, err error) {
 	now := time.Now()
 
 	var guid uuid.UUID
@@ -51,7 +45,7 @@ func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (err er
 	} else {
 		guid, err = uuid.Parse(user.GUID)
 		if err != nil {
-			return fmt.Errorf("PSQL: Write: parse guid: %w", err)
+			return authme.User{}, fmt.Errorf("PSQL: Write: parse guid: %w", err)
 		}
 	}
 
@@ -63,10 +57,25 @@ func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (err er
 		UpdatedAt:    now,
 	})
 	if err != nil {
-		return fmt.Errorf("PSQL: Write: insert user: %w", err)
+		return authme.User{}, fmt.Errorf("PSQL: Write: insert user: %w", err)
 	}
 
-	return nil
+	return user, nil
+}
+
+func (psql UserReadWriter) Update(ctx context.Context, user authme.User) (_ authme.User, err error) {
+	_, err = sqlcs.New(psql.tx).UpdateUser(ctx, sqlcs.UpdateUserParams{
+		ID:           uuid.MustParse(user.GUID),
+		Email:        user.PID,
+		Name:         user.Name,
+		Status:       string(user.Status),
+		PasswordHash: user.PasswordHash,
+	})
+	if err != nil {
+		return authme.User{}, fmt.Errorf("PSQL: Write: update user: %w", err)
+	}
+
+	return user, nil
 }
 
 func isNotFoundErr(err error) bool {

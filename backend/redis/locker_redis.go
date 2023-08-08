@@ -1,16 +1,15 @@
-package authme
+package redis
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/fahmifan/authme"
 	"github.com/redis/rueidis"
 	"github.com/redis/rueidis/rueidislock"
 )
 
-type Locker interface {
-	Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error
-}
+var _ authme.Locker = (*RedisLock)(nil)
 
 type RedisLock struct {
 	locker rueidislock.Locker

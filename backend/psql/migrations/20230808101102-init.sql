@@ -3,7 +3,10 @@
 CREATE TABLE users (
   id uuid PRIMARY KEY,
   email VARCHAR(255) NOT NULL,
+  "name" VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  verify_token TEXT NOT NULL,
+  "status" VARCHAR(64) NOT NULL,
   last_login_at TIMESTAMP,
   archived boolean NOT NULL DEFAULT false,
 
