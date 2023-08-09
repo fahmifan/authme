@@ -6,13 +6,13 @@ import (
 )
 
 type RetryCountReader interface {
-	// Read reads retry count for user.
-	Read(ctx context.Context, user User) (RetryCount, error)
+	// GetOrCreate reads retry count for user.
+	GetOrCreate(ctx context.Context, user User) (RetryCount, error)
 }
 
 type ReatryCountWriter interface {
-	// Write writes retry count for user.
-	Write(ctx context.Context, user User, rc RetryCount) error
+	// Update writes retry count for user.
+	Update(ctx context.Context, rc RetryCount) (RetryCount, error)
 }
 
 type RetryCountReadWriter interface {

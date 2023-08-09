@@ -4,16 +4,31 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/fahmifan/authme"
 )
 
 type JWTAuther struct {
-	auther    *Auther
-	secret    []byte
-	sessionRW SessionReadWriter
+	auther        Auther
+	secret        []byte
+	sessionRW     SessionReadWriter
+	guidGenerator authme.GUIDGenerator
 }
 
-func NewJWTAuther(auther *Auther) JWTAuther {
-	return JWTAuther{auther: auther}
+type NewJWTAutherArg struct {
+	Auther        Auther
+	Secret        []byte
+	SessionRW     SessionReadWriter
+	GUIDGenerator authme.GUIDGenerator
+}
+
+func NewJWTAuther(arg NewJWTAutherArg) JWTAuther {
+	return JWTAuther{
+		auther:        arg.Auther,
+		secret:        arg.Secret,
+		sessionRW:     arg.SessionRW,
+		guidGenerator: arg.GUIDGenerator,
+	}
 }
 
 type JWTAuthResponse struct {
@@ -25,24 +40,25 @@ type JWTAuthResponse struct {
 func (auther JWTAuther) Auth(ctx context.Context, req AuthRequest) (JWTAuthResponse, error) {
 	user, err := auther.auther.Auth(ctx, req)
 	if err != nil {
-		return JWTAuthResponse{}, err
+		return JWTAuthResponse{}, fmt.Errorf("Auth: Auther.Auth: %w", err)
 	}
 
 	now := time.Now()
+	guid := auther.guidGenerator.Generate()
 
-	session, err := CreateSession(auther.secret, user, now)
+	session, err := CreateSession(user, now, guid)
 	if err != nil {
-		return JWTAuthResponse{}, fmt.Errorf("create session: %w", err)
+		return JWTAuthResponse{}, fmt.Errorf("Auth: CreateSession: %w", err)
 	}
 
-	accessToken, expiredAt, err := session.CreateAccessToken(now)
+	accessToken, expiredAt, err := session.CreateAccessToken(auther.secret, now)
 	if err != nil {
-		return JWTAuthResponse{}, fmt.Errorf("create access token: %w", err)
+		return JWTAuthResponse{}, fmt.Errorf("Auth: CreateAccessToken: %w", err)
 	}
 
 	session, err = auther.sessionRW.Create(ctx, session)
 	if err != nil {
-		return JWTAuthResponse{}, fmt.Errorf("create session: %w", err)
+		return JWTAuthResponse{}, fmt.Errorf("Auth: sessionRW.Create: %w", err)
 	}
 
 	res := JWTAuthResponse{
@@ -62,7 +78,7 @@ func (auther JWTAuther) RefreshToken(ctx context.Context, refreshToken string) (
 
 	now := time.Now()
 
-	accessToken, expiredAt, err := session.CreateAccessToken(now)
+	accessToken, expiredAt, err := session.CreateAccessToken(auther.secret, now)
 	if err != nil {
 		return JWTAuthResponse{}, fmt.Errorf("create access token: %w", err)
 	}

@@ -14,12 +14,13 @@ CREATE TABLE users (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX users_email_idx ON users (email);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email);
 
-CREATE TABLE user_login_retry_counts (
-  user_id uuid PRIMARY KEY,
+CREATE TABLE user_retry_counts (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users (id),
   retry_count INTEGER NOT NULL DEFAULT 0,
-  last_retry_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  last_retry_at TIMESTAMP DEFAULT NOW(),
 
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -34,6 +35,11 @@ CREATE TABLE user_sessions (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX user_tokens_refresh_token_idx ON user_tokens (refresh_token);
+CREATE UNIQUE INDEX IF NOT EXISTS user_tokens_refresh_token_idx ON user_sessions (token);
 
 -- +migrate Down
+DROP INDEX IF EXISTS user_tokens_refresh_token_idx;
+DROP TABLE IF EXISTS user_sessions;
+DROP TABLE IF EXISTS user_retry_counts;
+DROP INDEX IF EXISTS users_email_idx;
+DROP TABLE IF EXISTS users;

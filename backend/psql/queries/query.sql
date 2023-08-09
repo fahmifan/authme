@@ -5,8 +5,8 @@ SELECT * FROM users WHERE email = $1;
 SELECT * FROM users WHERE id = $1;
 
 -- name: InsertUser :one
-INSERT INTO users (id, email, "name", "status",  password_hash, created_at, updated_at)
-VALUES (@id, @email, @name, @status, @password_hash, @created_at, @updated_at)
+INSERT INTO users (id, email, "name", "status",  password_hash, verify_token, created_at, updated_at)
+VALUES (@id, @email, @name, @status, @password_hash, @verify_token, @created_at, @updated_at)
 RETURNING *;
 
 -- name: UpdateUser :one
@@ -35,3 +35,18 @@ SET
     updated_at = NOW()
 WHERE id = @id RETURNING *;
 
+-- name: FindUserRetryCountByUserID :one
+SELECT * FROM user_retry_counts WHERE user_id = $1 LIMIT 1;
+
+-- name: InsertUserRetryCount :one
+INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at)
+VALUES (@id, @user_id, @retry_count, @last_retry_at)
+RETURNING *;
+
+-- name: UpdateUserRetryCount :one
+UPDATE user_retry_counts
+SET 
+    retry_count = @retry_count,
+    last_retry_at = @last_retry_at
+WHERE id = @id 
+RETURNING *;

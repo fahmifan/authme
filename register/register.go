@@ -14,6 +14,7 @@ import (
 type RegisterMailComposer interface {
 	ComposeSubject(user authme.User) string
 	ComposeBody(user authme.User, verificationBaseURL string) (string, error)
+	Sender() string
 }
 
 type GUIDGenerator interface {
@@ -24,20 +25,32 @@ type GUIDGenerator interface {
 type Register struct {
 	verificationBaseURL string
 	userRW              authme.UserReadWriter
-	hasher              authme.PasswordHasher
+	passwordHasher      authme.PasswordHasher
 	mailer              authme.Mailer
 	mailComposer        RegisterMailComposer
 	guideGenerator      GUIDGenerator
 	locker              authme.Locker
 }
 
-func NewRegister(
-	userRW authme.UserReadWriter,
-	hasher authme.PasswordHasher,
-) Register {
+type NewRegisterArgs struct {
+	VerificationBaseURL string
+	UserRW              authme.UserReadWriter
+	PasswordHasher      authme.PasswordHasher
+	Mailer              authme.Mailer
+	MailComposer        RegisterMailComposer
+	GUIDGenerator       GUIDGenerator
+	Locker              authme.Locker
+}
+
+func NewRegister(arg NewRegisterArgs) Register {
 	return Register{
-		userRW: userRW,
-		hasher: hasher,
+		userRW:              arg.UserRW,
+		passwordHasher:      arg.PasswordHasher,
+		verificationBaseURL: arg.VerificationBaseURL,
+		mailer:              arg.Mailer,
+		mailComposer:        arg.MailComposer,
+		guideGenerator:      arg.GUIDGenerator,
+		locker:              arg.Locker,
 	}
 }
 
@@ -47,18 +60,28 @@ type RegisterRequest struct {
 	PlainPassword string
 }
 
+type RegisterResponse struct {
+	// GUID is global unique identifier can be UUID, Integer, etc.
+	GUID string
+	// PID is personal identifier can be email, username etc.
+	PID    string
+	Email  string
+	Name   string
+	Status authme.UserStatus
+}
+
 // Register registers a new user.
-func (register Register) Register(ctx context.Context, req RegisterRequest) (authme.User, error) {
+func (register Register) Register(ctx context.Context, req RegisterRequest) (RegisterResponse, error) {
 	_, err := register.userRW.FindByPID(ctx, req.PID)
 	if err != nil && !isErrNotFound(err) {
-		return authme.User{}, fmt.Errorf("read user: %w", err)
+		return RegisterResponse{}, fmt.Errorf("read user: %w", err)
 	}
 	if !isErrNotFound(err) {
-		return authme.User{}, fmt.Errorf("user already exists")
+		return RegisterResponse{}, fmt.Errorf("user already exists")
 	}
 
 	user, err := authme.CreateUser(authme.CreateUserRequest{
-		PasswordHasher: register.hasher,
+		PasswordHasher: register.passwordHasher,
 		GUID:           register.guideGenerator.Generate(),
 		PID:            req.PID,
 		Email:          req.Email,
@@ -66,27 +89,40 @@ func (register Register) Register(ctx context.Context, req RegisterRequest) (aut
 		PlainPassword:  req.PlainPassword,
 	})
 	if err != nil {
-		return authme.User{}, fmt.Errorf("Register: CreateUser: %w", err)
+		return RegisterResponse{}, fmt.Errorf("Register: CreateUser: %w", err)
 	}
 
 	user, err = register.userRW.Create(ctx, user)
 	if err != nil {
-		return authme.User{}, fmt.Errorf("Register: save user: %w", err)
+		return RegisterResponse{}, fmt.Errorf("Register: save user: %w", err)
 	}
 
 	subject := register.mailComposer.ComposeSubject(user)
 	mailBody, err := register.mailComposer.ComposeBody(user, register.verificationBaseURL)
 	if err != nil {
-		return authme.User{}, fmt.Errorf("Register: compose email body: %w", err)
+		return RegisterResponse{}, fmt.Errorf("Register: compose email body: %w", err)
 	}
 
 	// TODO: might want to do pubsub/background to send email verification
-	err = register.mailer.Send(ctx, user.Email, subject, mailBody)
+	err = register.mailer.Send(ctx, authme.MailerSendArg{
+		Subject: subject,
+		From:    register.mailComposer.Sender(),
+		To:      user.Email,
+		Body:    mailBody,
+	})
 	if err != nil {
-		return authme.User{}, fmt.Errorf("Register: send email: %w", err)
+		return RegisterResponse{}, fmt.Errorf("Register: send email: %w", err)
 	}
 
-	return user, nil
+	res := RegisterResponse{
+		GUID:   user.GUID,
+		PID:    user.PID,
+		Email:  user.Email,
+		Name:   user.Name,
+		Status: user.Status,
+	}
+
+	return res, nil
 }
 
 type VerifyRegistrationRequest struct {
@@ -137,7 +173,17 @@ func generateVerifyToken() string {
 }
 
 type DefaultMailComposer struct {
-	Sender string
+	sender string
+}
+
+func NewDefaultMailComposer(sender string) DefaultMailComposer {
+	return DefaultMailComposer{
+		sender: sender,
+	}
+}
+
+func (composer DefaultMailComposer) Sender() string {
+	return composer.sender
 }
 
 func (composer DefaultMailComposer) ComposeSubject(user authme.User) string {

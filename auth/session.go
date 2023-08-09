@@ -33,15 +33,15 @@ type SessionReadWriter interface {
 }
 
 type Session struct {
-	secret []byte
-
+	GUID           string
 	User           authme.User
 	Token          string
 	TokenExpiredAt time.Time
 }
 
-func CreateSession(secret []byte, user authme.User, now time.Time) (Session, error) {
+func CreateSession(user authme.User, now time.Time, guid string) (Session, error) {
 	sess := Session{
+		GUID: guid,
 		User: user,
 	}
 
@@ -54,7 +54,7 @@ type JWTCalim struct {
 	jwt.RegisteredClaims
 }
 
-func (sess Session) CreateAccessToken(now time.Time) (token string, expiredAt time.Time, err error) {
+func (sess Session) CreateAccessToken(secert []byte, now time.Time) (token string, expiredAt time.Time, err error) {
 	expiredAt = now.Add(accessTokenExpireDuration)
 
 	jwtAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, JWTCalim{
@@ -65,7 +65,7 @@ func (sess Session) CreateAccessToken(now time.Time) (token string, expiredAt ti
 		},
 	})
 
-	accessToken, err := jwtAccessToken.SignedString(sess.secret)
+	accessToken, err := jwtAccessToken.SignedString(secert)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("sign access token: %w", err)
 	}

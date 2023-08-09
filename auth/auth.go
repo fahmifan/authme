@@ -15,17 +15,19 @@ type Auther struct {
 	locker         authme.Locker
 }
 
-func NewAuth(
-	userReader authme.UserReader,
-	passwordHasher authme.PasswordHasher,
-	retryCountRW authme.RetryCountReadWriter,
-	locker authme.Locker,
-) Auther {
+type NewAuthArg struct {
+	UserReader     authme.UserReader
+	PasswordHasher authme.PasswordHasher
+	RetryCountRW   authme.RetryCountReadWriter
+	Locker         authme.Locker
+}
+
+func NewAuth(arg NewAuthArg) Auther {
 	return Auther{
-		userReader:     userReader,
-		passwordHasher: passwordHasher,
-		retryCountRW:   retryCountRW,
-		locker:         locker,
+		userReader:     arg.UserReader,
+		passwordHasher: arg.PasswordHasher,
+		retryCountRW:   arg.RetryCountRW,
+		locker:         arg.Locker,
 	}
 }
 
@@ -34,14 +36,15 @@ type AuthRequest struct {
 	PlainPassword string
 }
 
-func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (user authme.User, err error) {
+func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (_ authme.User, err error) {
+	var user authme.User
 	err = auther.locker.Lock(ctx, makeLockKey(req.PID), func(ctx context.Context) (err error) {
 		user, err = auther.userReader.FindByPID(ctx, req.PID)
 		if err != nil {
 			return fmt.Errorf("read user: %w", err)
 		}
 
-		rc, err := auther.retryCountRW.Read(ctx, user)
+		rc, err := auther.retryCountRW.GetOrCreate(ctx, user)
 		if err != nil {
 			return fmt.Errorf("retry count: %w", err)
 		}
@@ -57,7 +60,7 @@ func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (user authme.Us
 
 		rc = rc.Inc()
 
-		err = auther.retryCountRW.Write(ctx, user, rc)
+		_, err = auther.retryCountRW.Update(ctx, rc)
 		if err != nil {
 			return fmt.Errorf("reset retry count: %w", err)
 		}

@@ -35,8 +35,19 @@ type Locker interface {
 	Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error
 }
 
+type MailerSendArg struct {
+	Subject string
+	From    string
+	To      string
+	Body    string
+}
+
 type Mailer interface {
-	Send(ctx context.Context, to, subject, body string) error
+	Send(ctx context.Context, arg MailerSendArg) (err error)
+}
+
+type GUIDGenerator interface {
+	Generate() string
 }
 
 type UserStatus string
@@ -54,7 +65,7 @@ type User struct {
 	Email        string
 	Name         string
 	PasswordHash string
-	// VerifyToken is used to verify UserStatus
+	// VerifyToken to verify UserStatus
 	VerifyToken string
 	Status      UserStatus
 }
@@ -112,10 +123,12 @@ func (user User) VerifyStatus(verifyToken string) (User, error) {
 	return user, nil
 }
 
-type DefaultHasher struct {
+// DefaultPasswordHasher is a default implementation of PasswordHasher
+// using bcrypt algorithm.
+type DefaultPasswordHasher struct {
 }
 
-func (br DefaultHasher) HashPassword(plainPassword string) (string, error) {
+func (br DefaultPasswordHasher) HashPassword(plainPassword string) (string, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return "", fmt.Errorf("generate password hash: %w", err)
@@ -124,6 +137,6 @@ func (br DefaultHasher) HashPassword(plainPassword string) (string, error) {
 	return string(hashed), nil
 }
 
-func (br DefaultHasher) Compare(hashedPassword, plainPassword string) error {
+func (br DefaultPasswordHasher) Compare(hashedPassword, plainPassword string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
 }

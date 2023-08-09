@@ -24,10 +24,11 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
-type UserLoginRetryCount struct {
+type UserRetryCount struct {
+	ID          uuid.UUID
 	UserID      uuid.UUID
 	RetryCount  int32
-	LastRetryAt time.Time
+	LastRetryAt sql.NullTime
 	CreatedAt   time.Time
 }
 

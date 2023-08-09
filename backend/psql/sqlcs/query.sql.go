@@ -7,6 +7,7 @@ package sqlcs
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -74,6 +75,23 @@ func (q *Queries) FindUserByID(ctx context.Context, id uuid.UUID) (User, error) 
 	return i, err
 }
 
+const findUserRetryCountByUserID = `-- name: FindUserRetryCountByUserID :one
+SELECT id, user_id, retry_count, last_retry_at, created_at FROM user_retry_counts WHERE user_id = $1 LIMIT 1
+`
+
+func (q *Queries) FindUserRetryCountByUserID(ctx context.Context, userID uuid.UUID) (UserRetryCount, error) {
+	row := q.db.QueryRowContext(ctx, findUserRetryCountByUserID, userID)
+	var i UserRetryCount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RetryCount,
+		&i.LastRetryAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertSession = `-- name: InsertSession :one
 INSERT INTO user_sessions (id, user_id, token, token_expired_at)
 VALUES ($1, $2, $3, $4)
@@ -107,8 +125,8 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (U
 }
 
 const insertUser = `-- name: InsertUser :one
-INSERT INTO users (id, email, "name", "status",  password_hash, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO users (id, email, "name", "status",  password_hash, verify_token, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, email, name, password_hash, verify_token, status, last_login_at, archived, created_at, updated_at
 `
 
@@ -118,6 +136,7 @@ type InsertUserParams struct {
 	Name         string
 	Status       string
 	PasswordHash string
+	VerifyToken  string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -129,6 +148,7 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 		arg.Name,
 		arg.Status,
 		arg.PasswordHash,
+		arg.VerifyToken,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -144,6 +164,37 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 		&i.Archived,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const insertUserRetryCount = `-- name: InsertUserRetryCount :one
+INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at)
+VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, retry_count, last_retry_at, created_at
+`
+
+type InsertUserRetryCountParams struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	RetryCount  int32
+	LastRetryAt sql.NullTime
+}
+
+func (q *Queries) InsertUserRetryCount(ctx context.Context, arg InsertUserRetryCountParams) (UserRetryCount, error) {
+	row := q.db.QueryRowContext(ctx, insertUserRetryCount,
+		arg.ID,
+		arg.UserID,
+		arg.RetryCount,
+		arg.LastRetryAt,
+	)
+	var i UserRetryCount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RetryCount,
+		&i.LastRetryAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -216,6 +267,34 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Archived,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserRetryCount = `-- name: UpdateUserRetryCount :one
+UPDATE user_retry_counts
+SET 
+    retry_count = $1,
+    last_retry_at = $2
+WHERE id = $3 
+RETURNING id, user_id, retry_count, last_retry_at, created_at
+`
+
+type UpdateUserRetryCountParams struct {
+	RetryCount  int32
+	LastRetryAt sql.NullTime
+	ID          uuid.UUID
+}
+
+func (q *Queries) UpdateUserRetryCount(ctx context.Context, arg UpdateUserRetryCountParams) (UserRetryCount, error) {
+	row := q.db.QueryRowContext(ctx, updateUserRetryCount, arg.RetryCount, arg.LastRetryAt, arg.ID)
+	var i UserRetryCount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RetryCount,
+		&i.LastRetryAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }

@@ -34,7 +34,7 @@ func (tx RedisLock) Lock(ctx context.Context, key string, fn func(ctx context.Co
 	}
 	defer cancel()
 
-	if fn(ctx); err != nil {
+	if err := fn(ctx); err != nil {
 		return err
 	}
 

@@ -1,0 +1,29 @@
+version: '3'
+
+volumes:
+  authme-postgres:
+
+services:
+  postgres:
+    image: postgres:15.3-alpine3.18
+    volumes:
+      - authme-postgres:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+    container_name: authme-postgres
+    ports:
+      - 5432:5432
+  
+  redis:
+    image: redis:5.0.4-alpine
+    ports:
+      - 6379:6379
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - 1025:1025
+      - 8025:8025
+    environment:
+      MH_HOSTNAME: mailhog.example

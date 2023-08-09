@@ -15,6 +15,18 @@ import (
 var _ authme.UserReader = UserReadWriter{}
 var _ authme.UserWriter = UserReadWriter{}
 
+func UserFromSQL(xuser sqlcs.User) authme.User {
+	return authme.User{
+		GUID:         xuser.ID.String(),
+		PID:          xuser.Email,
+		Email:        xuser.Email,
+		Name:         xuser.Name,
+		VerifyToken:  xuser.VerifyToken,
+		Status:       authme.UserStatus(xuser.Status),
+		PasswordHash: xuser.PasswordHash,
+	}
+}
+
 type UserReadWriter struct {
 	tx sqlcs.DBTX
 }
@@ -55,6 +67,9 @@ func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (_ auth
 		PasswordHash: user.PasswordHash,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+		Name:         user.Name,
+		Status:       string(user.Status),
+		VerifyToken:  user.VerifyToken,
 	})
 	if err != nil {
 		return authme.User{}, fmt.Errorf("PSQL: Write: insert user: %w", err)

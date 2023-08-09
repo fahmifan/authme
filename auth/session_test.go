@@ -10,13 +10,14 @@ import (
 
 func TestSession_CreateAccessToken(t *testing.T) {
 	now := time.Now()
+	guid := "guid"
 
-	sess, err := CreateSession([]byte("secret"), authme.User{}, now)
+	sess, err := CreateSession(authme.User{}, now, guid)
 	require.NoError(t, err)
 	require.NotEmpty(t, sess.Token)
 	require.NotZero(t, sess.TokenExpiredAt)
 
-	token, expiredAt, err := sess.CreateAccessToken(now)
+	token, expiredAt, err := sess.CreateAccessToken([]byte("secret"), now)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 	require.Greater(t, expiredAt, now)
@@ -24,8 +25,9 @@ func TestSession_CreateAccessToken(t *testing.T) {
 
 func TestSession_Refresh(t *testing.T) {
 	now := time.Now()
+	guid := "guid"
 
-	sess, err := CreateSession([]byte("secret"), authme.User{}, now)
+	sess, err := CreateSession(authme.User{}, now, guid)
 	require.NoError(t, err)
 	require.NotZero(t, sess)
 
