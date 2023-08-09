@@ -60,7 +60,7 @@ type RegisterRequest struct {
 	PlainPassword string
 }
 
-type RegisterResponse struct {
+type User struct {
 	// GUID is global unique identifier can be UUID, Integer, etc.
 	GUID string
 	// PID is personal identifier can be email, username etc.
@@ -71,13 +71,13 @@ type RegisterResponse struct {
 }
 
 // Register registers a new user.
-func (register Register) Register(ctx context.Context, req RegisterRequest) (RegisterResponse, error) {
+func (register Register) Register(ctx context.Context, req RegisterRequest) (User, error) {
 	_, err := register.userRW.FindByPID(ctx, req.PID)
 	if err != nil && !isErrNotFound(err) {
-		return RegisterResponse{}, fmt.Errorf("read user: %w", err)
+		return User{}, fmt.Errorf("read user: %w", err)
 	}
 	if !isErrNotFound(err) {
-		return RegisterResponse{}, fmt.Errorf("user already exists")
+		return User{}, fmt.Errorf("user already exists")
 	}
 
 	user, err := authme.CreateUser(authme.CreateUserRequest{
@@ -89,18 +89,18 @@ func (register Register) Register(ctx context.Context, req RegisterRequest) (Reg
 		PlainPassword:  req.PlainPassword,
 	})
 	if err != nil {
-		return RegisterResponse{}, fmt.Errorf("Register: CreateUser: %w", err)
+		return User{}, fmt.Errorf("Register: CreateUser: %w", err)
 	}
 
 	user, err = register.userRW.Create(ctx, user)
 	if err != nil {
-		return RegisterResponse{}, fmt.Errorf("Register: save user: %w", err)
+		return User{}, fmt.Errorf("Register: save user: %w", err)
 	}
 
 	subject := register.mailComposer.ComposeSubject(user)
 	mailBody, err := register.mailComposer.ComposeBody(user, register.verificationBaseURL)
 	if err != nil {
-		return RegisterResponse{}, fmt.Errorf("Register: compose email body: %w", err)
+		return User{}, fmt.Errorf("Register: compose email body: %w", err)
 	}
 
 	// TODO: might want to do pubsub/background to send email verification
@@ -111,10 +111,10 @@ func (register Register) Register(ctx context.Context, req RegisterRequest) (Reg
 		Body:    mailBody,
 	})
 	if err != nil {
-		return RegisterResponse{}, fmt.Errorf("Register: send email: %w", err)
+		return User{}, fmt.Errorf("Register: send email: %w", err)
 	}
 
-	res := RegisterResponse{
+	res := User{
 		GUID:   user.GUID,
 		PID:    user.PID,
 		Email:  user.Email,
@@ -130,10 +130,10 @@ type VerifyRegistrationRequest struct {
 	VerifyToken string
 }
 
-func (register Register) VerifyRegistration(ctx context.Context, req VerifyRegistrationRequest) (user authme.User, err error) {
+func (register Register) VerifyRegistration(ctx context.Context, req VerifyRegistrationRequest) (res User, err error) {
 	verifyLockKey := fmt.Sprintf("register:verify:%s", req.PID)
 	err = register.locker.Lock(ctx, verifyLockKey, func(ctx context.Context) error {
-		user, err = register.userRW.FindByPID(ctx, req.PID)
+		user, err := register.userRW.FindByPID(ctx, req.PID)
 		if err != nil {
 			return fmt.Errorf("VerifyRegistration: find user: %w", err)
 		}
@@ -148,13 +148,21 @@ func (register Register) VerifyRegistration(ctx context.Context, req VerifyRegis
 			return fmt.Errorf("VerifyRegistration: update user: %w", err)
 		}
 
+		res = User{
+			GUID:   user.GUID,
+			PID:    user.PID,
+			Email:  user.Email,
+			Name:   user.Name,
+			Status: user.Status,
+		}
+
 		return nil
 	})
 	if err != nil {
-		return authme.User{}, err
+		return User{}, err
 	}
 
-	return user, nil
+	return res, nil
 }
 
 func isErrNotFound(err error) bool {

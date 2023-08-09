@@ -16,9 +16,10 @@ services:
       - 5432:5432
   
   redis:
-    image: redis:5.0.4-alpine
+    image: redis:7.0-alpine3.18
     ports:
       - 6379:6379
+    container_name: authme-redis
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
@@ -27,3 +28,4 @@ services:
       - 8025:8025
     environment:
       MH_HOSTNAME: mailhog.example
+    container_name: authme-mailhog

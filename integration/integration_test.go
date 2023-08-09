@@ -1,16 +1,21 @@
+//go:build integration_test
+
 package integration_test
 
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/integration/httpserver"
+	"github.com/fahmifan/authme/register"
 	"github.com/go-resty/resty/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -83,7 +88,7 @@ type IntegrationTestSuite struct {
 }
 
 func (suite *IntegrationTestSuite) TestRegister() {
-	suite.Run("register", func() {
+	suite.Run("register & verify", func() {
 		resp, err := suite.rr.R().
 			SetBody(`{"email":"test@email.com","password":"test1234"}`).
 			Post("/auth/register")
@@ -95,7 +100,28 @@ func (suite *IntegrationTestSuite) TestRegister() {
 			suite.FailNow(resp.String())
 		}
 
-		fmt.Println("resp >>> ", resp.String())
+		registerResp := register.User{}
+		err = json.Unmarshal(resp.Body(), &registerResp)
+		suite.NoError(err)
+
+		userRW := psql.NewUserReadWriter(suite.db)
+
+		user, err := userRW.FindByPID(context.Background(), registerResp.PID)
+		suite.NoError(err)
+
+		urlVal := url.Values{}
+		urlVal.Add("token", user.VerifyToken)
+		urlVal.Add("pid", user.PID)
+
+		queryParam := urlVal.Encode()
+
+		resp, err = suite.rr.R().Get(fmt.Sprintf("/auth/verify?%s", queryParam))
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusOK {
+			fmt.Println("resp >>> ", resp.String())
+			suite.FailNow(resp.String())
+		}
 	})
 
 	suite.Run("login", func() {
@@ -115,7 +141,5 @@ func (suite *IntegrationTestSuite) TestRegister() {
 			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
-
-		fmt.Println("resp >>> ", resp.String())
 	})
 }

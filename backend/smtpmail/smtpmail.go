@@ -47,7 +47,7 @@ func (m *SMTP) Send(ctx context.Context, arg authme.MailerSendArg) (err error) {
 	msg.SetHeader("From", arg.From)
 	msg.SetHeader("To", arg.To)
 	msg.SetHeader("Subject", arg.Subject)
-	msg.SetBody("text/html", arg.Subject)
+	msg.SetBody("text/html", arg.Body)
 
 	return m.mail.DialAndSend(msg)
 }

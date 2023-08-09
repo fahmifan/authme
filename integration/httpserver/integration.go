@@ -134,6 +134,27 @@ func Run() error {
 		json.NewEncoder(w).Encode(res)
 	})
 
+	router.Get("/auth/verify", func(w http.ResponseWriter, r *http.Request) {
+		pid := r.URL.Query().Get("pid")
+		token := r.URL.Query().Get("token")
+
+		res, err := registerer.VerifyRegistration(r.Context(), register.VerifyRegistrationRequest{
+			PID:         pid,
+			VerifyToken: token,
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		err = json.NewEncoder(w).Encode(res)
+		if err != nil {
+			fmt.Println("encode err: ", err)
+			return
+		}
+	})
+
 	fmt.Println("listen on :8080")
 	httpserver = &http.Server{
 		Addr:    ":8080",
