@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -33,7 +32,8 @@ func TestIntegration(t *testing.T) {
 	}()
 	defer httpserver.Stop(context.TODO())
 
-	base.waitServer()
+	err := base.waitServer()
+	require.NoError(t, err)
 
 	integrationTestSuite := IntegrationTestSuite{Base: base}
 	suite.Run(t, &integrationTestSuite)
@@ -59,19 +59,20 @@ func NewBase(t *testing.T) *Base {
 
 func (suite *Base) waitServer() error {
 	for i := 0; i < 10; i++ {
+		// wait before check
+		time.Sleep(1 * time.Second)
+
 		resp, err := suite.rr.R().Get("/healthz")
 		if err != nil {
 			continue
 		}
 
 		if resp.StatusCode() == http.StatusOK {
-			continue
+			return nil
 		}
-
-		time.Sleep(1 * time.Second)
 	}
 
-	return errors.New("server not ready")
+	return errors.New("wait server timeout")
 }
 
 func (suite *Base) SetupSubTest() {
@@ -87,10 +88,16 @@ type IntegrationTestSuite struct {
 	*Base
 }
 
+type Map map[string]any
+
 func (suite *IntegrationTestSuite) TestRegister() {
 	suite.Run("register & verify", func() {
 		resp, err := suite.rr.R().
-			SetBody(`{"email":"test@email.com","password":"test1234"}`).
+			SetBody(Map{
+				"name":     "test user",
+				"email":    "test@email.com",
+				"password": "test1234",
+			}).
 			Post("/auth/register")
 
 		suite.NoError(err)
@@ -104,18 +111,19 @@ func (suite *IntegrationTestSuite) TestRegister() {
 		err = json.Unmarshal(resp.Body(), &registerResp)
 		suite.NoError(err)
 
-		userRW := psql.NewUserReadWriter(suite.db)
+		suite.Equal("test user", registerResp.Name)
 
+		// check verify token
+		userRW := psql.NewUserReadWriter(suite.db)
 		user, err := userRW.FindByPID(context.Background(), registerResp.PID)
 		suite.NoError(err)
 
-		urlVal := url.Values{}
-		urlVal.Add("token", user.VerifyToken)
-		urlVal.Add("pid", user.PID)
-
-		queryParam := urlVal.Encode()
-
-		resp, err = suite.rr.R().Get(fmt.Sprintf("/auth/verify?%s", queryParam))
+		resp, err = suite.rr.R().
+			SetQueryParams(map[string]string{
+				"token": user.VerifyToken,
+				"pid":   user.PID,
+			}).
+			Get(fmt.Sprintf("/auth/verify"))
 		suite.NoError(err)
 
 		if resp.StatusCode() != http.StatusOK {
@@ -126,13 +134,19 @@ func (suite *IntegrationTestSuite) TestRegister() {
 
 	suite.Run("login", func() {
 		_, err := suite.rr.R().
-			SetBody(`{"email":"test@email.com","password":"test1234"}`).
+			SetBody(Map{
+				"email":    "test@email.com",
+				"password": "test1234",
+			}).
 			Post("/auth/register")
 
 		suite.NoError(err)
 
 		resp, err := suite.rr.R().
-			SetBody(`{"email":"test@email.com", "password": "test1234"}`).
+			SetBody(Map{
+				"email":    "test@email.com",
+				"password": "test1234",
+			}).
 			Post("/auth")
 
 		suite.NoError(err)

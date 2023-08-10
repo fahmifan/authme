@@ -55,6 +55,7 @@ func NewRegister(arg NewRegisterArgs) Register {
 }
 
 type RegisterRequest struct {
+	Name          string
 	PID           string
 	Email         string
 	PlainPassword string
@@ -85,6 +86,7 @@ func (register Register) Register(ctx context.Context, req RegisterRequest) (Use
 		GUID:           register.guideGenerator.Generate(),
 		PID:            req.PID,
 		Email:          req.Email,
+		Name:           req.Name,
 		VerifyToken:    generateVerifyToken(),
 		PlainPassword:  req.PlainPassword,
 	})
