@@ -36,7 +36,7 @@ func Run() error {
 
 	smtpMailer, err := smtpmail.NewSmtpClient(&smtpmail.Config{
 		Host: "localhost",
-		Port: 1025,
+		Port: 1025, // mailhog
 	})
 	if err != nil {
 		return fmt.Errorf("run: new smtp client: %w", err)
@@ -49,7 +49,7 @@ func Run() error {
 		JWTSecret:           []byte("secret"),
 		VerificationBaseURL: "http://localhost:8080/verification",
 		DB:                  db,
-		MailComposer:        register.NewDefaultMailComposer("app@example.com"),
+		MailComposer:        register.NewDefaultMailComposer("app@example.com", "Authme"),
 		Mailer:              smtpMailer,
 	})
 

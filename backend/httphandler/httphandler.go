@@ -112,9 +112,10 @@ func (handler *HTTPHandler) handleHelathz() http.HandlerFunc {
 func (handler *HTTPHandler) handleRegister(registerer register.Register) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := struct {
-			Name          string `json:"name" validate:"required"`
-			Email         string `json:"email" validate:"required,email"`
-			PlainPassword string `json:"password" validate:"required,min=8,max=32"`
+			Name            string `json:"name" validate:"required"`
+			Email           string `json:"email" validate:"required,email"`
+			PlainPassword   string `json:"password" validate:"required,min=8"`
+			ConfirmPassword string `json:"confirmPassword" validate:"required,min=8"`
 		}{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -122,10 +123,11 @@ func (handler *HTTPHandler) handleRegister(registerer register.Register) http.Ha
 		}
 
 		res, err := registerer.Register(r.Context(), register.RegisterRequest{
-			PID:           req.Email,
-			Name:          req.Name,
-			Email:         req.Email,
-			PlainPassword: req.PlainPassword,
+			PID:             req.Email,
+			Name:            req.Name,
+			Email:           req.Email,
+			PlainPassword:   req.PlainPassword,
+			ConfirmPassword: req.ConfirmPassword,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

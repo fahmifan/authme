@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -71,13 +73,14 @@ type User struct {
 }
 
 type CreateUserRequest struct {
-	PasswordHasher PasswordHasher
-	GUID           string
-	PID            string
-	Email          string
-	Name           string
-	VerifyToken    string
-	PlainPassword  string
+	PasswordHasher  PasswordHasher
+	GUID            string
+	PID             string
+	Email           string
+	Name            string
+	VerifyToken     string
+	PlainPassword   string
+	ConfirmPassword string
 }
 
 func CreateUser(req CreateUserRequest) (User, error) {
@@ -90,8 +93,16 @@ func CreateUser(req CreateUserRequest) (User, error) {
 	if req.PID == "" {
 		return User{}, fmt.Errorf("pid is empty")
 	}
-	if req.Email == "" {
-		return User{}, fmt.Errorf("email is empty")
+	if len(strings.TrimSpace(req.PlainPassword)) < 8 {
+		return User{}, fmt.Errorf("password is too short")
+	}
+	if !strings.EqualFold(req.PlainPassword, req.ConfirmPassword) {
+		return User{}, fmt.Errorf("password and confirm password mismatch")
+	}
+
+	_, err := mail.ParseAddress(req.Email)
+	if err != nil {
+		return User{}, fmt.Errorf("invalid email address: %w", err)
 	}
 
 	hashedPassword, err := req.PasswordHasher.HashPassword(req.PlainPassword)

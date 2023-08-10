@@ -21,6 +21,16 @@ type GUIDGenerator interface {
 	Generate() string
 }
 
+type User struct {
+	// GUID is global unique identifier can be UUID, Integer, etc.
+	GUID string
+	// PID is personal identifier can be email, username etc.
+	PID    string
+	Email  string
+	Name   string
+	Status authme.UserStatus
+}
+
 // Register is a use case for registering a new user.
 type Register struct {
 	verificationBaseURL string
@@ -55,20 +65,11 @@ func NewRegister(arg NewRegisterArgs) Register {
 }
 
 type RegisterRequest struct {
-	Name          string
-	PID           string
-	Email         string
-	PlainPassword string
-}
-
-type User struct {
-	// GUID is global unique identifier can be UUID, Integer, etc.
-	GUID string
-	// PID is personal identifier can be email, username etc.
-	PID    string
-	Email  string
-	Name   string
-	Status authme.UserStatus
+	Name            string `json:"name" validate:"required"`
+	PID             string `json:"pid" validate:"required,email"`
+	Email           string `json:"email" validate:"required,email"`
+	PlainPassword   string `json:"plain_password" validate:"required,min=8,max=32"`
+	ConfirmPassword string `json:"confirm_password" validate:"required,min=8,max=32"`
 }
 
 // Register registers a new user.
@@ -82,13 +83,14 @@ func (register Register) Register(ctx context.Context, req RegisterRequest) (Use
 	}
 
 	user, err := authme.CreateUser(authme.CreateUserRequest{
-		PasswordHasher: register.passwordHasher,
-		GUID:           register.guideGenerator.Generate(),
-		PID:            req.PID,
-		Email:          req.Email,
-		Name:           req.Name,
-		VerifyToken:    generateVerifyToken(),
-		PlainPassword:  req.PlainPassword,
+		PasswordHasher:  register.passwordHasher,
+		GUID:            register.guideGenerator.Generate(),
+		PID:             req.PID,
+		Email:           req.Email,
+		Name:            req.Name,
+		VerifyToken:     generateVerifyToken(),
+		PlainPassword:   req.PlainPassword,
+		ConfirmPassword: req.ConfirmPassword,
 	})
 	if err != nil {
 		return User{}, fmt.Errorf("Register: CreateUser: %w", err)
@@ -183,12 +185,14 @@ func generateVerifyToken() string {
 }
 
 type DefaultMailComposer struct {
-	sender string
+	sender    string
+	brandName string
 }
 
-func NewDefaultMailComposer(sender string) DefaultMailComposer {
+func NewDefaultMailComposer(sender, brandName string) DefaultMailComposer {
 	return DefaultMailComposer{
-		sender: sender,
+		sender:    sender,
+		brandName: brandName,
 	}
 }
 
@@ -201,7 +205,11 @@ func (composer DefaultMailComposer) ComposeSubject(user authme.User) string {
 }
 
 func (composer DefaultMailComposer) ComposeBody(user authme.User, baseURL string) (string, error) {
-	hh := hermes.Hermes{}
+	hh := hermes.Hermes{
+		Product: hermes.Product{
+			Name: composer.brandName,
+		},
+	}
 
 	mail := hermes.Email{
 		Body: hermes.Body{

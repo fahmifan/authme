@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fahmifan/authme/auth"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/integration/httpserver"
 	"github.com/fahmifan/authme/register"
@@ -94,9 +95,10 @@ func (suite *IntegrationTestSuite) TestRegister() {
 	suite.Run("register & verify", func() {
 		resp, err := suite.rr.R().
 			SetBody(Map{
-				"name":     "test user",
-				"email":    "test@email.com",
-				"password": "test1234",
+				"name":            "test user",
+				"email":           "test@email.com",
+				"password":        "test1234",
+				"confirmPassword": "test1234",
 			}).
 			Post("/auth/register")
 
@@ -133,15 +135,19 @@ func (suite *IntegrationTestSuite) TestRegister() {
 	})
 
 	suite.Run("login", func() {
+		// register
 		_, err := suite.rr.R().
 			SetBody(Map{
-				"email":    "test@email.com",
-				"password": "test1234",
+				"name":            "test user",
+				"email":           "test@email.com",
+				"password":        "test1234",
+				"confirmPassword": "test1234",
 			}).
 			Post("/auth/register")
 
 		suite.NoError(err)
 
+		// login
 		resp, err := suite.rr.R().
 			SetBody(Map{
 				"email":    "test@email.com",
@@ -155,5 +161,13 @@ func (suite *IntegrationTestSuite) TestRegister() {
 			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
+
+		loginResp := auth.JWTAuthResponse{}
+		err = json.Unmarshal(resp.Body(), &loginResp)
+		suite.NoError(err)
+
+		suite.NotEmpty(loginResp.AccessToken)
+		suite.NotEmpty(loginResp.RefreshToken)
+		suite.NotZero(loginResp.ExpiredAt)
 	})
 }

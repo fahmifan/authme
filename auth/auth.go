@@ -37,6 +37,13 @@ type AuthRequest struct {
 }
 
 func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (_ authme.User, err error) {
+	if req.PID == "" {
+		return authme.User{}, fmt.Errorf("pid is required")
+	}
+	if req.PlainPassword == "" {
+		return authme.User{}, fmt.Errorf("password is required")
+	}
+
 	var user authme.User
 	err = auther.locker.Lock(ctx, makeLockKey(req.PID), func(ctx context.Context) (err error) {
 		user, err = auther.userReader.FindByPID(ctx, req.PID)
