@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,11 +12,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const sessionExpireDuration = 24 * time.Hour
-const accessTokenExpireDuration = 1 * time.Hour
+const SessionExpireDuration = 24 * time.Hour
+const AccessTokenExpireDuration = 1 * time.Hour
 
 var (
-	ErrorSessionNotFound = fmt.Errorf("session not found")
+	ErrorSessionNotFound = errors.New("session not found")
+	ErrSessionExpired    = errors.New("session expired")
 )
 
 type SessionWriter interface {
@@ -55,7 +57,7 @@ type JWTCalim struct {
 }
 
 func (sess Session) CreateAccessToken(secert []byte, now time.Time) (token string, expiredAt time.Time, err error) {
-	expiredAt = now.Add(accessTokenExpireDuration)
+	expiredAt = now.Add(AccessTokenExpireDuration)
 
 	jwtAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, JWTCalim{
 		UserGUID: sess.User.GUID,
@@ -74,12 +76,24 @@ func (sess Session) CreateAccessToken(secert []byte, now time.Time) (token strin
 }
 
 func (sess Session) Refresh(now time.Time) (Session, error) {
-	expiredAt := now.Add(sessionExpireDuration)
+	if sess.isTokenExpired() {
+		return Session{}, ErrSessionExpired
+	}
+
+	expiredAt := now.Add(SessionExpireDuration)
 
 	sess.Token = GenerateRefreshToken()
 	sess.TokenExpiredAt = expiredAt
 
 	return sess, nil
+}
+
+func (sess Session) isTokenExpired() bool {
+	if sess.TokenExpiredAt.IsZero() {
+		return false
+	}
+
+	return sess.TokenExpiredAt.Before(time.Now())
 }
 
 const refreshTokenLength = 32
