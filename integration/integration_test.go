@@ -28,7 +28,7 @@ func TestIntegration(t *testing.T) {
 
 	go func() {
 		if err := httpserver.Run(); err != nil {
-			fmt.Println("httpserver run error: ", err)
+			require.NoError(t, err)
 		}
 	}()
 	defer httpserver.Stop(context.TODO())
@@ -91,7 +91,7 @@ type IntegrationTestSuite struct {
 	*Base
 }
 
-func (suite *IntegrationTestSuite) TestRegister() {
+func (suite *IntegrationTestSuite) TestRegisterAndVerify() {
 	suite.Run("register & verify", func() {
 		resp, err := suite.rr.R().
 			SetBody(Map{
@@ -105,7 +105,6 @@ func (suite *IntegrationTestSuite) TestRegister() {
 		suite.NoError(err)
 
 		if resp.StatusCode() != http.StatusOK {
-			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
 
@@ -129,7 +128,6 @@ func (suite *IntegrationTestSuite) TestRegister() {
 		suite.NoError(err)
 
 		if resp.StatusCode() != http.StatusOK {
-			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
 	})
@@ -137,8 +135,6 @@ func (suite *IntegrationTestSuite) TestRegister() {
 
 func (suite *IntegrationTestSuite) TestLogin() {
 	suite.Run("login", func() {
-		suite.T().Skip()
-
 		// register
 		_, err := suite.rr.R().
 			SetBody(Map{
@@ -162,7 +158,6 @@ func (suite *IntegrationTestSuite) TestLogin() {
 		suite.NoError(err)
 
 		if resp.StatusCode() != http.StatusOK {
-			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
 
@@ -199,7 +194,6 @@ func (suite *IntegrationTestSuite) TestLogin() {
 		suite.NoError(err)
 
 		if resp.StatusCode() != http.StatusOK {
-			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
 
@@ -213,8 +207,6 @@ func (suite *IntegrationTestSuite) TestLogin() {
 
 		suite.NoError(err)
 
-		fmt.Println("login 2 >>> ", resp.String())
-
 		loginResp := auth.JWTAuthResponse{}
 		err = json.Unmarshal(resp.Body(), &loginResp)
 		suite.NoError(err)
@@ -222,5 +214,52 @@ func (suite *IntegrationTestSuite) TestLogin() {
 		suite.NotEmpty(loginResp.AccessToken)
 		suite.NotEmpty(loginResp.RefreshToken)
 		suite.NotZero(loginResp.ExpiredAt)
+	})
+}
+
+func (suite *IntegrationTestSuite) TestRefreshToken() {
+	suite.Run("refreshing token", func() {
+		// register
+		_, err := suite.rr.R().
+			SetBody(Map{
+				"name":            "test user",
+				"email":           "test@email.com",
+				"password":        "test1234",
+				"confirmPassword": "test1234",
+			}).
+			Post("/auth/register")
+
+		suite.NoError(err)
+
+		// login
+		resp, err := suite.rr.R().
+			SetBody(Map{
+				"email":    "test@email.com",
+				"password": "test1234",
+			}).
+			Post("/auth")
+		suite.NoError(err)
+
+		loginResp := auth.JWTAuthResponse{}
+		err = json.Unmarshal(resp.Body(), &loginResp)
+		suite.NoError(err)
+
+		// refreshing token
+		resp, err = suite.rr.R().SetBody(Map{
+			"refresh_token": loginResp.RefreshToken,
+		}).Post("/auth/refresh")
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusOK {
+			suite.FailNow(resp.String())
+		}
+
+		refreshResp := auth.JWTAuthResponse{}
+		err = json.Unmarshal(resp.Body(), &refreshResp)
+		suite.NoError(err)
+
+		suite.NotEmpty(refreshResp.AccessToken)
+		suite.NotEmpty(refreshResp.RefreshToken)
+		suite.NotZero(refreshResp.ExpiredAt)
 	})
 }

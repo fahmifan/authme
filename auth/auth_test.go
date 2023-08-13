@@ -8,17 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type UserMock struct {
-}
-
-func (u UserMock) PasswordHash() string {
-	return ""
-}
-
-func (u UserMock) PID() string {
-	return "test@email.com"
-}
-
 func TestCanAuth(t *testing.T) {
 	t.Run(`can't auth because count is max & lock is not expired`, func(t *testing.T) {
 		now := time.Now()

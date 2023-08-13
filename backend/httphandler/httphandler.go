@@ -19,14 +19,20 @@ const (
 	PathRegister       = "/auth/register"
 	PathVerifyRegister = "/auth/verify"
 	PathAuth           = "/auth"
+	PathRefreshToken   = "/auth/refresh"
 )
+
+type HttpError struct {
+	Err  string `json:"error"`
+	Code int    `json:"code"`
+}
 
 type HTTPHandler struct {
 	db                  *sql.DB
 	redisHost           string
 	jwtSecret           []byte
-	mailComposer        register.RegisterMailComposer
 	verificationBaseURL string
+	mailComposer        register.RegisterMailComposer
 	mailer              authme.Mailer
 }
 
@@ -103,6 +109,7 @@ func (handler *HTTPHandler) Router() (http.Handler, error) {
 	router.Post(PathRegister, handler.handleRegister(registerer))
 	router.Get(PathVerifyRegister, handler.handleVerifyRegistration(registerer))
 	router.Post(PathAuth, handler.handleAuth(jwtauther))
+	router.Post(PathRefreshToken, handler.handleRefreshingToken(jwtauther))
 
 	return router, nil
 }
@@ -110,6 +117,7 @@ func (handler *HTTPHandler) Router() (http.Handler, error) {
 func (handler *HTTPHandler) handleHelathz() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		w.Write(nil)
 	}
 }
 
@@ -122,7 +130,9 @@ func (handler *HTTPHandler) handleRegister(registerer register.Register) http.Ha
 			ConfirmPassword string `json:"confirmPassword" validate:"required,min=8"`
 		}{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeJSON(w, http.StatusBadRequest, HttpError{
+				Err: err.Error(),
+			})
 			return
 		}
 
@@ -134,11 +144,13 @@ func (handler *HTTPHandler) handleRegister(registerer register.Register) http.Ha
 			ConfirmPassword: req.ConfirmPassword,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeJSON(w, http.StatusBadRequest, HttpError{
+				Err: err.Error(),
+			})
 			return
 		}
 
-		json.NewEncoder(w).Encode(res)
+		writeJSON(w, http.StatusOK, res)
 	}
 }
 
@@ -156,12 +168,7 @@ func (handler *HTTPHandler) handleVerifyRegistration(registerer register.Registe
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		err = json.NewEncoder(w).Encode(res)
-		if err != nil {
-			fmt.Println("encode err: ", err)
-			return
-		}
+		writeJSON(w, http.StatusOK, res)
 	}
 }
 
@@ -172,7 +179,10 @@ func (handler *HTTPHandler) handleAuth(jwtauther auth.JWTAuther) http.HandlerFun
 			Password string `json:"password" validate:"required,min=8,max=32"`
 		}{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeJSON(w, http.StatusBadRequest, HttpError{
+				Err: err.Error(),
+			})
+
 			return
 		}
 
@@ -181,10 +191,42 @@ func (handler *HTTPHandler) handleAuth(jwtauther auth.JWTAuther) http.HandlerFun
 			PlainPassword: req.Password,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeJSON(w, http.StatusBadRequest, HttpError{
+				Err: err.Error(),
+			})
 			return
 		}
 
-		json.NewEncoder(w).Encode(res)
+		writeJSON(w, http.StatusOK, res)
 	}
+}
+
+func (handler *HTTPHandler) handleRefreshingToken(jwtauther auth.JWTAuther) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := struct {
+			RefreshToken string `json:"refresh_token" validate:"required"`
+		}{}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, HttpError{
+				Err: err.Error(),
+			})
+		}
+
+		res, err := jwtauther.RefreshToken(r.Context(), req.RefreshToken)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, HttpError{
+				Err: err.Error(),
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, res)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
 }

@@ -39,13 +39,18 @@ func (psql SessionReadWriter) FindByToken(ctx context.Context, token string) (au
 		}
 	}
 
-	sess := auth.Session{
+	sess := sessionFromSQL(xsess, xuser)
+
+	return sess, nil
+}
+
+func sessionFromSQL(xsess sqlcs.UserSession, xuser sqlcs.User) auth.Session {
+	return auth.Session{
+		GUID:           xsess.ID.String(),
 		Token:          xsess.Token,
 		TokenExpiredAt: xsess.TokenExpiredAt,
 		User:           UserFromSQL(xuser),
 	}
-
-	return sess, nil
 }
 
 func (psql SessionReadWriter) Create(ctx context.Context, sess auth.Session) (auth.Session, error) {
@@ -77,7 +82,7 @@ func (psql SessionReadWriter) Create(ctx context.Context, sess auth.Session) (au
 func (psql SessionReadWriter) Update(ctx context.Context, sess auth.Session) (auth.Session, error) {
 	query := sqlcs.New(psql.tx)
 
-	guid, err := uuid.Parse(sess.User.GUID)
+	guid, err := uuid.Parse(sess.GUID)
 	if err != nil {
 		return auth.Session{}, fmt.Errorf("SessionReadWriter: Update: parse guid: %w", err)
 	}
