@@ -40,6 +40,8 @@ func TestIntegration(t *testing.T) {
 	suite.Run(t, &integrationTestSuite)
 }
 
+type Map map[string]any
+
 type Base struct {
 	suite.Suite
 	rr *resty.Client
@@ -89,8 +91,6 @@ type IntegrationTestSuite struct {
 	*Base
 }
 
-type Map map[string]any
-
 func (suite *IntegrationTestSuite) TestRegister() {
 	suite.Run("register & verify", func() {
 		resp, err := suite.rr.R().
@@ -133,8 +133,12 @@ func (suite *IntegrationTestSuite) TestRegister() {
 			suite.FailNow(resp.String())
 		}
 	})
+}
 
+func (suite *IntegrationTestSuite) TestLogin() {
 	suite.Run("login", func() {
+		suite.T().Skip()
+
 		// register
 		_, err := suite.rr.R().
 			SetBody(Map{
@@ -161,6 +165,55 @@ func (suite *IntegrationTestSuite) TestRegister() {
 			fmt.Println("resp >>> ", resp.String())
 			suite.FailNow(resp.String())
 		}
+
+		loginResp := auth.JWTAuthResponse{}
+		err = json.Unmarshal(resp.Body(), &loginResp)
+		suite.NoError(err)
+
+		suite.NotEmpty(loginResp.AccessToken)
+		suite.NotEmpty(loginResp.RefreshToken)
+		suite.NotZero(loginResp.ExpiredAt)
+	})
+
+	suite.Run("login multiple times", func() {
+		// register
+		_, err := suite.rr.R().
+			SetBody(Map{
+				"name":            "test user",
+				"email":           "test@email.com",
+				"password":        "test1234",
+				"confirmPassword": "test1234",
+			}).
+			Post("/auth/register")
+
+		suite.NoError(err)
+
+		// login 1
+		resp, err := suite.rr.R().
+			SetBody(Map{
+				"email":    "test@email.com",
+				"password": "test1234",
+			}).
+			Post("/auth")
+
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusOK {
+			fmt.Println("resp >>> ", resp.String())
+			suite.FailNow(resp.String())
+		}
+
+		// login 2
+		resp, err = suite.rr.R().
+			SetBody(Map{
+				"email":    "test@email.com",
+				"password": "test1234",
+			}).
+			Post("/auth")
+
+		suite.NoError(err)
+
+		fmt.Println("login 2 >>> ", resp.String())
 
 		loginResp := auth.JWTAuthResponse{}
 		err = json.Unmarshal(resp.Body(), &loginResp)

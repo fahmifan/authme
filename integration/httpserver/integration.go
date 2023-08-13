@@ -53,6 +53,10 @@ func Run() error {
 		Mailer:              smtpMailer,
 	})
 
+	if err := handler.MigrateUp(); err != nil {
+		return fmt.Errorf("run: migrate up: %w", err)
+	}
+
 	router, err := handler.Router()
 	if err != nil {
 		return fmt.Errorf("run: router: %w", err)

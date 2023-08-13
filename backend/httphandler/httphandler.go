@@ -50,12 +50,16 @@ func NewHTTPHandler(arg NewHTTPHandlerArg) *HTTPHandler {
 	}
 }
 
+func (handler *HTTPHandler) MigrateUp() error {
+	if err := psql.MigrateUp(handler.db); err != nil {
+		return fmt.Errorf("run: migrate up: %w", err)
+	}
+
+	return nil
+}
+
 func (handler *HTTPHandler) Router() (http.Handler, error) {
 	db := handler.db
-
-	if err := psql.MigrateUp(db); err != nil {
-		return nil, fmt.Errorf("run: migrate up: %w", err)
-	}
 
 	guidGenerator := psql.UUIDGenerator{}
 	passHasher := authme.DefaultPasswordHasher{}
