@@ -1,6 +1,6 @@
 
 -- +migrate Up
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   email VARCHAR(255) NOT NULL,
   "name" VARCHAR(255) NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE users (
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email);
 
-CREATE TABLE user_retry_counts (
+CREATE TABLE IF NOT EXISTS user_retry_counts (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES users (id),
   retry_count INTEGER NOT NULL DEFAULT 0,
@@ -25,7 +25,7 @@ CREATE TABLE user_retry_counts (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE user_sessions (
+CREATE TABLE IF NOT EXISTS user_sessions (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES users (id),
   token TEXT NOT NULL, 
