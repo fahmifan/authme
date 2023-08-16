@@ -8,8 +8,6 @@ import (
 	"github.com/redis/rueidis/rueidislock"
 )
 
-// var _ authme.Locker = (*RedisLock)(nil)
-
 type RedisLock struct {
 	locker rueidislock.Locker
 }
