@@ -17,15 +17,14 @@ const LockDuration = 1 * time.Minute
 var _ authme.RetryCountReadWriter = RetryCountReadWriter{}
 
 type RetryCountReadWriter struct {
-	tx sqlcs.DBTX
 }
 
-func NewRetryCountReadWriter(tx sqlcs.DBTX) RetryCountReadWriter {
-	return RetryCountReadWriter{tx: tx}
+func NewRetryCountReadWriter() RetryCountReadWriter {
+	return RetryCountReadWriter{}
 }
 
-func (rw RetryCountReadWriter) GetOrCreate(ctx context.Context, user authme.User) (authme.RetryCount, error) {
-	query := sqlcs.New(rw.tx)
+func (rw RetryCountReadWriter) GetOrCreate(ctx context.Context, tx authme.DBTX, user authme.User) (authme.RetryCount, error) {
+	query := sqlcs.New(tx)
 	userGUID, err := uuid.Parse(user.GUID)
 	if err != nil {
 		return authme.RetryCount{}, fmt.Errorf("RetryCountReadWriter: GetOrCreate: parse guid: %w", err)
@@ -52,8 +51,8 @@ func (rw RetryCountReadWriter) GetOrCreate(ctx context.Context, user authme.User
 	}
 }
 
-func (rw RetryCountReadWriter) Update(ctx context.Context, retryCount authme.RetryCount) (authme.RetryCount, error) {
-	query := sqlcs.New(rw.tx)
+func (rw RetryCountReadWriter) Update(ctx context.Context, tx authme.DBTX, retryCount authme.RetryCount) (authme.RetryCount, error) {
+	query := sqlcs.New(tx)
 	guid, err := uuid.Parse(retryCount.ID)
 	if err != nil {
 		return authme.RetryCount{}, fmt.Errorf("RetryCountReadWriter: Update: parse guid: %w", err)

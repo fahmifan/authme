@@ -2,6 +2,7 @@ package httphandler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -49,20 +50,17 @@ func (handler *CookieAuthHandler) MigrateUp() error {
 }
 
 func (handler *CookieAuthHandler) CookieAuthRouter() (http.Handler, error) {
-	db := handler.accountHandler.db
-
 	passHasher := authme.DefaultPasswordHasher{}
 
-	userRW := psql.NewUserReadWriter(db)
-	retryCountRW := psql.NewRetryCountReadWriter(db)
-	sessionRW := psql.NewSessionReadWriter(db)
+	userRW := psql.NewUserReadWriter()
+	retryCountRW := psql.NewRetryCountReadWriter()
+	sessionRW := psql.NewSessionReadWriter()
 	guidGenerator := psql.UUIDGenerator{}
 
 	auther := auth.NewAuth(auth.NewAuthArg{
 		UserReader:     userRW,
 		PasswordHasher: passHasher,
 		RetryCountRW:   retryCountRW,
-		Locker:         handler.accountHandler.locker,
 	})
 
 	sessionAuther := auth.NewSessionAuther(auth.NewSessionAutherArg{
@@ -100,7 +98,7 @@ func (handler *CookieAuthHandler) handleAuth(
 			return
 		}
 
-		sess, err := sessionAuther.Auth(r.Context(), auth.AuthRequest{
+		sess, err := sessionAuther.Auth(r.Context(), handler.accountHandler.db, auth.AuthRequest{
 			PID:           req.Email,
 			PlainPassword: req.Password,
 		})
@@ -145,13 +143,15 @@ func (handler *CookieAuthHandler) handleAuth(
 func (handler *CookieAuthHandler) Middleware() *CookieMiddleware {
 	return &CookieMiddleware{
 		sessionStore:  handler.sessionStore,
-		sessionReader: psql.NewSessionReadWriter(handler.accountHandler.db),
+		sessionReader: psql.NewSessionReadWriter(),
+		db:            handler.accountHandler.db,
 	}
 }
 
 type CookieMiddleware struct {
 	sessionStore  sessions.Store
 	sessionReader auth.SessionReader
+	db            *sql.DB
 }
 
 type Ctx string
@@ -182,7 +182,11 @@ func (cookieMiddleware CookieMiddleware) Authenticate() func(http.Handler) http.
 				return
 			}
 
-			sess, err := cookieMiddleware.sessionReader.FindByToken(r.Context(), sessAuth.Token)
+			sess, err := cookieMiddleware.sessionReader.FindByToken(
+				r.Context(),
+				cookieMiddleware.db,
+				sessAuth.Token,
+			)
 			if err != nil {
 				writeJSON(w, http.StatusUnauthorized, HttpError{
 					Err: err.Error(),

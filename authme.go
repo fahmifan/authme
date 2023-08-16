@@ -2,6 +2,7 @@ package authme
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -14,13 +15,40 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
+type DBTX interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	PrepareContext(context.Context, string) (*sql.Stmt, error)
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
+func Transaction(ctx context.Context, db *sql.DB, fn func(ctx context.Context, tx DBTX) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+
+	if fnErr := fn(ctx, tx); fnErr != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("rollback tx: %w", rbErr)
+		}
+		return fnErr
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	return nil
+}
+
 type UserReader interface {
-	FindByPID(ctx context.Context, pid string) (User, error)
+	FindByPID(ctx context.Context, tx DBTX, pid string) (User, error)
 }
 
 type UserWriter interface {
-	Create(ctx context.Context, user User) (User, error)
-	Update(ctx context.Context, user User) (User, error)
+	Create(ctx context.Context, tx DBTX, user User) (User, error)
+	Update(ctx context.Context, tx DBTX, user User) (User, error)
 }
 
 type UserReadWriter interface {
@@ -31,10 +59,6 @@ type UserReadWriter interface {
 type PasswordHasher interface {
 	HashPassword(plainPassword string) (string, error)
 	Compare(hashedPassword, plainPassword string) error
-}
-
-type Locker interface {
-	Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error
 }
 
 type MailerSendArg struct {

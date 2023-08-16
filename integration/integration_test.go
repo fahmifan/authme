@@ -116,8 +116,8 @@ func (suite *Base) prepareTestUser() TestUser {
 	suite.NoError(err)
 
 	// check verify token
-	userRW := psql.NewUserReadWriter(suite.db)
-	user, err := userRW.FindByPID(context.Background(), regUser.PID)
+	userRW := psql.NewUserReadWriter()
+	user, err := userRW.FindByPID(context.Background(), suite.db, regUser.PID)
 	suite.NoError(err)
 
 	resp, err = suite.rr.R().

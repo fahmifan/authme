@@ -14,15 +14,14 @@ var _ auth.SessionReader = SessionReadWriter{}
 var _ auth.SessionWriter = SessionReadWriter{}
 
 type SessionReadWriter struct {
-	tx sqlcs.DBTX
 }
 
-func NewSessionReadWriter(tx sqlcs.DBTX) SessionReadWriter {
-	return SessionReadWriter{tx: tx}
+func NewSessionReadWriter() SessionReadWriter {
+	return SessionReadWriter{}
 }
 
-func (psql SessionReadWriter) FindByToken(ctx context.Context, token string) (auth.Session, error) {
-	query := sqlcs.New(psql.tx)
+func (psql SessionReadWriter) FindByToken(ctx context.Context, tx authme.DBTX, token string) (auth.Session, error) {
+	query := sqlcs.New(tx)
 
 	xsess, err := query.FindSessionByToken(ctx, token)
 	if err != nil {
@@ -64,8 +63,8 @@ func sessionFromSQL(xsess sqlcs.UserSession, xuser sqlcs.User) auth.Session {
 	}
 }
 
-func (psql SessionReadWriter) Create(ctx context.Context, sess auth.Session) (auth.Session, error) {
-	query := sqlcs.New(psql.tx)
+func (psql SessionReadWriter) Create(ctx context.Context, tx authme.DBTX, sess auth.Session) (auth.Session, error) {
+	query := sqlcs.New(tx)
 
 	id, err := uuid.Parse(sess.GUID)
 	if err != nil {
@@ -90,8 +89,8 @@ func (psql SessionReadWriter) Create(ctx context.Context, sess auth.Session) (au
 	return sess, nil
 }
 
-func (psql SessionReadWriter) Update(ctx context.Context, sess auth.Session) (auth.Session, error) {
-	query := sqlcs.New(psql.tx)
+func (psql SessionReadWriter) Update(ctx context.Context, tx authme.DBTX, sess auth.Session) (auth.Session, error) {
+	query := sqlcs.New(tx)
 
 	guid, err := uuid.Parse(sess.GUID)
 	if err != nil {

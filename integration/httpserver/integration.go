@@ -9,7 +9,6 @@ import (
 
 	"github.com/fahmifan/authme/backend/httphandler"
 	"github.com/fahmifan/authme/backend/psql"
-	"github.com/fahmifan/authme/backend/redis"
 	"github.com/fahmifan/authme/backend/smtpmail"
 	"github.com/fahmifan/authme/register"
 	"github.com/go-chi/chi/v5"
@@ -48,14 +47,7 @@ func Run() error {
 
 	mailComposer := register.NewDefaultMailComposer("app@example.com", "Authme")
 
-	redisHost := "localhost:6379"
-	locker, err := redis.NewRedisLock(redisHost)
-	if err != nil {
-		return fmt.Errorf("run: new redis lock: %w", err)
-	}
-
 	accountHandler := httphandler.NewAccountHandler(httphandler.NewAccountHandlerArg{
-		Locker:              locker,
 		VerificationBaseURL: "http://localhost:8080/verification",
 		DB:                  db,
 		MailComposer:        mailComposer,

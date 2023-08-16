@@ -40,8 +40,8 @@ func (suite *AccountTestSuite) TestRegisterAndVerify() {
 		suite.Equal("test user", registerResp.Name)
 
 		// check verify token
-		userRW := psql.NewUserReadWriter(suite.db)
-		user, err := userRW.FindByPID(context.Background(), registerResp.PID)
+		userRW := psql.NewUserReadWriter()
+		user, err := userRW.FindByPID(context.Background(), suite.db, registerResp.PID)
 		suite.NoError(err)
 
 		resp, err = suite.rr.R().

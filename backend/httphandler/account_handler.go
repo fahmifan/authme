@@ -27,7 +27,6 @@ type HttpError struct {
 
 type AccountHandler struct {
 	db                  *sql.DB
-	locker              authme.Locker
 	verificationBaseURL string
 	mailComposer        register.RegisterMailComposer
 	mailer              authme.Mailer
@@ -37,14 +36,12 @@ type NewAccountHandlerArg struct {
 	VerificationBaseURL string
 	DB                  *sql.DB
 	MailComposer        register.RegisterMailComposer
-	Locker              authme.Locker
 	Mailer              authme.Mailer
 }
 
 func NewAccountHandler(arg NewAccountHandlerArg) *AccountHandler {
 	return &AccountHandler{
 		db:                  arg.DB,
-		locker:              arg.Locker,
 		mailComposer:        arg.MailComposer,
 		verificationBaseURL: arg.VerificationBaseURL,
 		mailer:              arg.Mailer,
@@ -62,11 +59,10 @@ func (handler *AccountHandler) MigrateUp() error {
 func (handler *AccountHandler) AccountRouter(routePrefix string) (*chi.Mux, error) {
 	passHasher := authme.DefaultPasswordHasher{}
 	guidGenerator := psql.UUIDGenerator{}
-	userRW := psql.NewUserReadWriter(handler.db)
+	userRW := psql.NewUserReadWriter()
 
 	registerer := register.NewRegister(register.NewRegisterArgs{
 		VerificationBaseURL: handler.verificationBaseURL,
-		Locker:              handler.locker,
 		UserRW:              userRW,
 		PasswordHasher:      passHasher,
 		MailComposer:        handler.mailComposer,
@@ -105,7 +101,7 @@ func (handler *AccountHandler) handleRegister(registerer register.Register) http
 			return
 		}
 
-		res, err := registerer.Register(r.Context(), register.RegisterRequest{
+		res, err := registerer.Register(r.Context(), handler.db, register.RegisterRequest{
 			PID:             req.Email,
 			Name:            req.Name,
 			Email:           req.Email,
@@ -128,7 +124,7 @@ func (handler *AccountHandler) handleVerifyRegistration(registerer register.Regi
 		pid := r.URL.Query().Get("pid")
 		token := r.URL.Query().Get("token")
 
-		res, err := registerer.VerifyRegistration(r.Context(), register.VerifyRegistrationRequest{
+		res, err := registerer.VerifyRegistration(r.Context(), handler.db, register.VerifyRegistrationRequest{
 			PID:         pid,
 			VerifyToken: token,
 		})

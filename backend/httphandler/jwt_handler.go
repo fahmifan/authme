@@ -39,15 +39,14 @@ func (handler *JWTAuthHandler) JWTAuthRouter() (*chi.Mux, error) {
 	passHasher := authme.DefaultPasswordHasher{}
 
 	guidGenerator := psql.UUIDGenerator{}
-	userRW := psql.NewUserReadWriter(handler.accountHandler.db)
-	retryCountRW := psql.NewRetryCountReadWriter(handler.accountHandler.db)
-	sessionRW := psql.NewSessionReadWriter(handler.accountHandler.db)
+	userRW := psql.NewUserReadWriter()
+	retryCountRW := psql.NewRetryCountReadWriter()
+	sessionRW := psql.NewSessionReadWriter()
 
 	auther := auth.NewAuth(auth.NewAuthArg{
 		UserReader:     userRW,
 		PasswordHasher: passHasher,
 		RetryCountRW:   retryCountRW,
-		Locker:         handler.accountHandler.locker,
 	})
 
 	jwtauther := auth.NewJWTAuther(auth.NewJWTAutherArg{
@@ -77,7 +76,7 @@ func (handler *JWTAuthHandler) handleAuth(jwtauther auth.JWTAuther) http.Handler
 			return
 		}
 
-		res, err := jwtauther.Auth(r.Context(), auth.AuthRequest{
+		res, err := jwtauther.Auth(r.Context(), handler.accountHandler.db, auth.AuthRequest{
 			PID:           req.Email,
 			PlainPassword: req.Password,
 		})
@@ -104,7 +103,7 @@ func (handler *JWTAuthHandler) handleRefreshingToken(jwtauther auth.JWTAuther) h
 			})
 		}
 
-		res, err := jwtauther.RefreshToken(r.Context(), req.RefreshToken)
+		res, err := jwtauther.RefreshToken(r.Context(), handler.accountHandler.db, req.RefreshToken)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, HttpError{
 				Err: err.Error(),

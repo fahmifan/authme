@@ -28,15 +28,14 @@ func UserFromSQL(xuser sqlcs.User) authme.User {
 }
 
 type UserReadWriter struct {
-	tx sqlcs.DBTX
 }
 
-func NewUserReadWriter(tx sqlcs.DBTX) UserReadWriter {
-	return UserReadWriter{tx: tx}
+func NewUserReadWriter() UserReadWriter {
+	return UserReadWriter{}
 }
 
-func (psql UserReadWriter) FindByPID(ctx context.Context, pid string) (authme.User, error) {
-	xuser, err := sqlcs.New(psql.tx).FindUserByEmail(ctx, pid)
+func (psql UserReadWriter) FindByPID(ctx context.Context, tx authme.DBTX, pid string) (authme.User, error) {
+	xuser, err := sqlcs.New(tx).FindUserByEmail(ctx, pid)
 	if err != nil {
 		if isNotFoundErr(err) {
 			return authme.User{}, authme.ErrNotFound
@@ -48,7 +47,7 @@ func (psql UserReadWriter) FindByPID(ctx context.Context, pid string) (authme.Us
 	return UserFromSQL(xuser), nil
 }
 
-func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (_ authme.User, err error) {
+func (psql UserReadWriter) Create(ctx context.Context, tx authme.DBTX, user authme.User) (_ authme.User, err error) {
 	now := time.Now()
 
 	var guid uuid.UUID
@@ -61,7 +60,7 @@ func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (_ auth
 		}
 	}
 
-	_, err = sqlcs.New(psql.tx).InsertUser(ctx, sqlcs.InsertUserParams{
+	_, err = sqlcs.New(tx).InsertUser(ctx, sqlcs.InsertUserParams{
 		ID:           guid,
 		Email:        user.PID,
 		PasswordHash: user.PasswordHash,
@@ -78,8 +77,8 @@ func (psql UserReadWriter) Create(ctx context.Context, user authme.User) (_ auth
 	return user, nil
 }
 
-func (psql UserReadWriter) Update(ctx context.Context, user authme.User) (_ authme.User, err error) {
-	_, err = sqlcs.New(psql.tx).UpdateUser(ctx, sqlcs.UpdateUserParams{
+func (psql UserReadWriter) Update(ctx context.Context, tx authme.DBTX, user authme.User) (_ authme.User, err error) {
+	_, err = sqlcs.New(tx).UpdateUser(ctx, sqlcs.UpdateUserParams{
 		ID:           uuid.MustParse(user.GUID),
 		Email:        user.PID,
 		Name:         user.Name,
