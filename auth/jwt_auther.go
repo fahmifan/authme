@@ -6,7 +6,14 @@ import (
 	"time"
 
 	"github.com/fahmifan/authme"
+	"github.com/golang-jwt/jwt/v5"
 )
+
+type JWTCalim struct {
+	UserGUID string `json:"user_guid"`
+	UserPID  string `json:"user_pid"`
+	jwt.RegisteredClaims
+}
 
 type JWTAuther struct {
 	auther        Auther

@@ -34,9 +34,19 @@ type SessionReadWriter interface {
 	SessionReader
 }
 
+type UserSession struct {
+	// GUID is global unique identifier can be UUID, Integer, etc.
+	GUID string
+	// PID is personal identifier can be email, username etc.
+	PID    string
+	Email  string
+	Name   string
+	Status authme.UserStatus
+}
+
 type Session struct {
 	GUID           string
-	User           authme.User
+	User           UserSession
 	Token          string
 	TokenExpiredAt time.Time
 }
@@ -44,16 +54,16 @@ type Session struct {
 func CreateSession(user authme.User, now time.Time, guid string) (Session, error) {
 	sess := Session{
 		GUID: guid,
-		User: user,
+		User: UserSession{
+			GUID:   user.GUID,
+			PID:    user.PID,
+			Email:  user.Email,
+			Name:   user.Name,
+			Status: user.Status,
+		},
 	}
 
 	return sess.Refresh(now)
-}
-
-type JWTCalim struct {
-	UserGUID string `json:"user_guid"`
-	UserPID  string `json:"user_pid"`
-	jwt.RegisteredClaims
 }
 
 func (sess Session) CreateAccessToken(secert []byte, now time.Time) (token string, expiredAt time.Time, err error) {
@@ -94,6 +104,14 @@ func (sess Session) isTokenExpired() bool {
 	}
 
 	return sess.TokenExpiredAt.Before(time.Now())
+}
+
+func (sess Session) MaxAge(now time.Time) int {
+	return int(sess.TokenExpiredAt.Sub(now).Seconds())
+}
+
+func (sess Session) IsExpired(now time.Time) bool {
+	return now.After(sess.TokenExpiredAt)
 }
 
 const refreshTokenLength = 32

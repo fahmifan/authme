@@ -36,7 +36,7 @@ type AuthRequest struct {
 	PlainPassword string
 }
 
-func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (_ authme.User, err error) {
+func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (user authme.User, err error) {
 	if req.PID == "" {
 		return authme.User{}, fmt.Errorf("pid is required")
 	}
@@ -44,7 +44,6 @@ func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (_ authme.User,
 		return authme.User{}, fmt.Errorf("password is required")
 	}
 
-	var user authme.User
 	err = auther.locker.Lock(ctx, makeLockKey(req.PID), func(ctx context.Context) (err error) {
 		user, err = auther.userReader.FindByPID(ctx, req.PID)
 		if err != nil {
@@ -79,6 +78,56 @@ func (auther *Auther) Auth(ctx context.Context, req AuthRequest) (_ authme.User,
 	}
 
 	return user, nil
+}
+
+type SessionAuther struct {
+	auther         Auther
+	sessionRW      SessionReadWriter
+	guideGenerator authme.GUIDGenerator
+}
+
+type NewSessionAutherArg struct {
+	Auther        Auther
+	SessionRW     SessionReadWriter
+	GUIDGenerator authme.GUIDGenerator
+}
+
+func NewSessionAuther(arg NewSessionAutherArg) SessionAuther {
+	return SessionAuther{
+		auther:         arg.Auther,
+		sessionRW:      arg.SessionRW,
+		guideGenerator: arg.GUIDGenerator,
+	}
+}
+
+type SessionAuthResponse struct {
+	Token  string `json:"token"`
+	MaxAge int    `json:"max_age"`
+}
+
+func (sessionAuther SessionAuther) Auth(ctx context.Context, req AuthRequest) (SessionAuthResponse, error) {
+	user, err := sessionAuther.auther.Auth(ctx, req)
+	if err != nil {
+		return SessionAuthResponse{}, fmt.Errorf("auth: %w", err)
+	}
+
+	now := time.Now()
+
+	newGUID := sessionAuther.guideGenerator.Generate()
+	session, err := CreateSession(user, now, newGUID)
+	if err != nil {
+		return SessionAuthResponse{}, fmt.Errorf("create session: %w", err)
+	}
+
+	session, err = sessionAuther.sessionRW.Create(ctx, session)
+	if err != nil {
+		return SessionAuthResponse{}, fmt.Errorf("create session: %w", err)
+	}
+
+	return SessionAuthResponse{
+		Token:  session.Token,
+		MaxAge: session.MaxAge(now),
+	}, nil
 }
 
 func makeLockKey(pid string) string {

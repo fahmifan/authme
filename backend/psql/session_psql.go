@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/auth"
 	"github.com/fahmifan/authme/backend/psql/sqlcs"
 	"github.com/google/uuid"
@@ -44,12 +45,22 @@ func (psql SessionReadWriter) FindByToken(ctx context.Context, token string) (au
 	return sess, nil
 }
 
+func userSessionFromSQL(xsess sqlcs.User) auth.UserSession {
+	return auth.UserSession{
+		GUID:   xsess.ID.String(),
+		PID:    xsess.Email,
+		Email:  xsess.Email,
+		Name:   xsess.Name,
+		Status: authme.UserStatus(xsess.Status),
+	}
+}
+
 func sessionFromSQL(xsess sqlcs.UserSession, xuser sqlcs.User) auth.Session {
 	return auth.Session{
 		GUID:           xsess.ID.String(),
 		Token:          xsess.Token,
 		TokenExpiredAt: xsess.TokenExpiredAt,
-		User:           UserFromSQL(xuser),
+		User:           userSessionFromSQL(xuser),
 	}
 }
 

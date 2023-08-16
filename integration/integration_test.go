@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fahmifan/authme/auth"
+	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/integration/httpserver"
 	"github.com/fahmifan/authme/register"
@@ -23,9 +23,20 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestIntegration(t *testing.T) {
-	base := NewBase(t)
+type Map map[string]any
 
+type TestUser struct {
+	User          authme.User
+	PlainPassword string
+}
+
+type Base struct {
+	suite.Suite
+	rr *resty.Client
+	db *sql.DB
+}
+
+func TestIntegration(t *testing.T) {
 	go func() {
 		if err := httpserver.Run(); err != nil {
 			require.NoError(t, err)
@@ -33,19 +44,13 @@ func TestIntegration(t *testing.T) {
 	}()
 	defer httpserver.Stop(context.TODO())
 
+	base := NewBase(t)
 	err := base.waitServer()
 	require.NoError(t, err)
 
-	integrationTestSuite := IntegrationTestSuite{Base: base}
-	suite.Run(t, &integrationTestSuite)
-}
-
-type Map map[string]any
-
-type Base struct {
-	suite.Suite
-	rr *resty.Client
-	db *sql.DB
+	suite.Run(t, &AccountTestSuite{Base: base})
+	suite.Run(t, &JWTTestSuite{Base: base})
+	suite.Run(t, &CookieTestSuite{Base: base})
 }
 
 func NewBase(t *testing.T) *Base {
@@ -60,12 +65,22 @@ func NewBase(t *testing.T) *Base {
 	return base
 }
 
+func (suite *Base) SetupSubTest() {
+	if err := psql.MigrateDown(suite.db); err != nil {
+		fmt.Println("migrate down error: ", err)
+	}
+
+	err := psql.MigrateUp(suite.db)
+	suite.NoError(err)
+}
+
 func (suite *Base) waitServer() error {
-	for i := 0; i < 10; i++ {
-		// wait before check
+	waitInSecond := 10
+	for i := 0; i < waitInSecond; i++ {
+		// wait 1sec before check
 		time.Sleep(1 * time.Second)
 
-		resp, err := suite.rr.R().Get("/healthz")
+		resp, err := suite.rr.R().Get("/rest/healthz")
 		if err != nil {
 			continue
 		}
@@ -78,188 +93,57 @@ func (suite *Base) waitServer() error {
 	return errors.New("wait server timeout")
 }
 
-func (suite *Base) SetupSubTest() {
-	if err := psql.MigrateDown(suite.db); err != nil {
-		fmt.Println("migrate down error: ", err)
+// Create new user and verify it.
+// Copied from account_integration_test.go#TestRegisterAndVerify
+func (suite *Base) prepareTestUser() TestUser {
+	plainPassword := "test1234"
+
+	resp, err := suite.rr.R().
+		SetBody(Map{
+			"name":            "test user",
+			"email":           "test@email.com",
+			"password":        plainPassword,
+			"confirmPassword": plainPassword,
+		}).
+		Post("/rest/auth/register")
+	suite.NoError(err)
+	if resp.StatusCode() != http.StatusOK {
+		suite.FailNow(resp.String())
 	}
 
-	err := psql.MigrateUp(suite.db)
+	regUser := register.User{}
+	err = json.Unmarshal(resp.Body(), &regUser)
 	suite.NoError(err)
+
+	// check verify token
+	userRW := psql.NewUserReadWriter(suite.db)
+	user, err := userRW.FindByPID(context.Background(), regUser.PID)
+	suite.NoError(err)
+
+	resp, err = suite.rr.R().
+		SetQueryParams(map[string]string{
+			"token": user.VerifyToken,
+			"pid":   user.PID,
+		}).
+		Get(fmt.Sprintf("/rest/auth/verify"))
+	suite.NoError(err)
+	suite.Equal(http.StatusOK, resp.StatusCode())
+
+	return TestUser{
+		User:          user,
+		PlainPassword: plainPassword,
+	}
 }
 
-type IntegrationTestSuite struct {
-	*Base
-}
+func (suite *Base) prepareLoginCookies(testUser TestUser) []*http.Cookie {
+	resp, err := suite.rr.R().
+		SetBody(Map{
+			"email":    testUser.User.Email,
+			"password": testUser.PlainPassword,
+		}).
+		Post("/cookie/auth")
+	suite.NoError(err)
+	suite.Require().Equal(http.StatusOK, resp.StatusCode())
 
-func (suite *IntegrationTestSuite) TestRegisterAndVerify() {
-	suite.Run("register & verify", func() {
-		resp, err := suite.rr.R().
-			SetBody(Map{
-				"name":            "test user",
-				"email":           "test@email.com",
-				"password":        "test1234",
-				"confirmPassword": "test1234",
-			}).
-			Post("/auth/register")
-
-		suite.NoError(err)
-
-		if resp.StatusCode() != http.StatusOK {
-			suite.FailNow(resp.String())
-		}
-
-		registerResp := register.User{}
-		err = json.Unmarshal(resp.Body(), &registerResp)
-		suite.NoError(err)
-
-		suite.Equal("test user", registerResp.Name)
-
-		// check verify token
-		userRW := psql.NewUserReadWriter(suite.db)
-		user, err := userRW.FindByPID(context.Background(), registerResp.PID)
-		suite.NoError(err)
-
-		resp, err = suite.rr.R().
-			SetQueryParams(map[string]string{
-				"token": user.VerifyToken,
-				"pid":   user.PID,
-			}).
-			Get(fmt.Sprintf("/auth/verify"))
-		suite.NoError(err)
-
-		if resp.StatusCode() != http.StatusOK {
-			suite.FailNow(resp.String())
-		}
-	})
-}
-
-func (suite *IntegrationTestSuite) TestLogin() {
-	suite.Run("login", func() {
-		// register
-		_, err := suite.rr.R().
-			SetBody(Map{
-				"name":            "test user",
-				"email":           "test@email.com",
-				"password":        "test1234",
-				"confirmPassword": "test1234",
-			}).
-			Post("/auth/register")
-
-		suite.NoError(err)
-
-		// login
-		resp, err := suite.rr.R().
-			SetBody(Map{
-				"email":    "test@email.com",
-				"password": "test1234",
-			}).
-			Post("/auth")
-
-		suite.NoError(err)
-
-		if resp.StatusCode() != http.StatusOK {
-			suite.FailNow(resp.String())
-		}
-
-		loginResp := auth.JWTAuthResponse{}
-		err = json.Unmarshal(resp.Body(), &loginResp)
-		suite.NoError(err)
-
-		suite.NotEmpty(loginResp.AccessToken)
-		suite.NotEmpty(loginResp.RefreshToken)
-		suite.NotZero(loginResp.ExpiredAt)
-	})
-
-	suite.Run("login multiple times", func() {
-		// register
-		_, err := suite.rr.R().
-			SetBody(Map{
-				"name":            "test user",
-				"email":           "test@email.com",
-				"password":        "test1234",
-				"confirmPassword": "test1234",
-			}).
-			Post("/auth/register")
-
-		suite.NoError(err)
-
-		// login 1
-		resp, err := suite.rr.R().
-			SetBody(Map{
-				"email":    "test@email.com",
-				"password": "test1234",
-			}).
-			Post("/auth")
-
-		suite.NoError(err)
-
-		if resp.StatusCode() != http.StatusOK {
-			suite.FailNow(resp.String())
-		}
-
-		// login 2
-		resp, err = suite.rr.R().
-			SetBody(Map{
-				"email":    "test@email.com",
-				"password": "test1234",
-			}).
-			Post("/auth")
-
-		suite.NoError(err)
-
-		loginResp := auth.JWTAuthResponse{}
-		err = json.Unmarshal(resp.Body(), &loginResp)
-		suite.NoError(err)
-
-		suite.NotEmpty(loginResp.AccessToken)
-		suite.NotEmpty(loginResp.RefreshToken)
-		suite.NotZero(loginResp.ExpiredAt)
-	})
-}
-
-func (suite *IntegrationTestSuite) TestRefreshToken() {
-	suite.Run("refreshing token", func() {
-		// register
-		_, err := suite.rr.R().
-			SetBody(Map{
-				"name":            "test user",
-				"email":           "test@email.com",
-				"password":        "test1234",
-				"confirmPassword": "test1234",
-			}).
-			Post("/auth/register")
-
-		suite.NoError(err)
-
-		// login
-		resp, err := suite.rr.R().
-			SetBody(Map{
-				"email":    "test@email.com",
-				"password": "test1234",
-			}).
-			Post("/auth")
-		suite.NoError(err)
-
-		loginResp := auth.JWTAuthResponse{}
-		err = json.Unmarshal(resp.Body(), &loginResp)
-		suite.NoError(err)
-
-		// refreshing token
-		resp, err = suite.rr.R().SetBody(Map{
-			"refresh_token": loginResp.RefreshToken,
-		}).Post("/auth/refresh")
-		suite.NoError(err)
-
-		if resp.StatusCode() != http.StatusOK {
-			suite.FailNow(resp.String())
-		}
-
-		refreshResp := auth.JWTAuthResponse{}
-		err = json.Unmarshal(resp.Body(), &refreshResp)
-		suite.NoError(err)
-
-		suite.NotEmpty(refreshResp.AccessToken)
-		suite.NotEmpty(refreshResp.RefreshToken)
-		suite.NotZero(refreshResp.ExpiredAt)
-	})
+	return resp.RawResponse.Cookies()
 }
