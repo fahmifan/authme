@@ -1,6 +1,7 @@
 package httphandler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -26,8 +27,9 @@ type HttpError struct {
 }
 
 type AccountHandler struct {
-	db                  *sql.DB
 	verificationBaseURL string
+	db                  *sql.DB
+	locker              authme.Locker
 	mailComposer        register.RegisterMailComposer
 	mailer              authme.Mailer
 }
@@ -37,14 +39,20 @@ type NewAccountHandlerArg struct {
 	DB                  *sql.DB
 	MailComposer        register.RegisterMailComposer
 	Mailer              authme.Mailer
+	Locker              authme.Locker
 }
 
 func NewAccountHandler(arg NewAccountHandlerArg) *AccountHandler {
+	if arg.Locker == nil {
+		arg.Locker = authme.NewDefaultLocker()
+	}
+
 	return &AccountHandler{
 		db:                  arg.DB,
 		mailComposer:        arg.MailComposer,
 		verificationBaseURL: arg.VerificationBaseURL,
 		mailer:              arg.Mailer,
+		locker:              arg.Locker,
 	}
 }
 
@@ -88,6 +96,8 @@ func (handler *AccountHandler) handleHelathz() http.HandlerFunc {
 
 func (handler *AccountHandler) handleRegister(registerer register.Register) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
 		req := struct {
 			Name            string `json:"name" validate:"required"`
 			Email           string `json:"email" validate:"required,email"`
@@ -101,12 +111,17 @@ func (handler *AccountHandler) handleRegister(registerer register.Register) http
 			return
 		}
 
-		res, err := registerer.Register(r.Context(), handler.db, register.RegisterRequest{
-			PID:             req.Email,
-			Name:            req.Name,
-			Email:           req.Email,
-			PlainPassword:   req.PlainPassword,
-			ConfirmPassword: req.ConfirmPassword,
+		res := register.User{}
+		lockKey := fmt.Sprintf("account_handler:register:email:%s", req.Email)
+		err = handler.locker.Lock(r.Context(), lockKey, func(ctx context.Context) error {
+			res, err = registerer.Register(r.Context(), handler.db, register.RegisterRequest{
+				PID:             req.Email,
+				Name:            req.Name,
+				Email:           req.Email,
+				PlainPassword:   req.PlainPassword,
+				ConfirmPassword: req.ConfirmPassword,
+			})
+			return err
 		})
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, HttpError{

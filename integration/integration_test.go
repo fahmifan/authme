@@ -95,13 +95,19 @@ func (suite *Base) waitServer() error {
 
 // Create new user and verify it.
 // Copied from account_integration_test.go#TestRegisterAndVerify
-func (suite *Base) prepareTestUser() TestUser {
+func (suite *Base) prepareDefaultTestUser() TestUser {
+	name := "test user"
+	email := "test@email.com"
 	plainPassword := "test1234"
 
+	return suite.preapreTestUser(name, email, plainPassword)
+}
+
+func (suite *Base) preapreTestUser(name, email, plainPassword string) TestUser {
 	resp, err := suite.rr.R().
 		SetBody(Map{
-			"name":            "test user",
-			"email":           "test@email.com",
+			"name":            name,
+			"email":           email,
 			"password":        plainPassword,
 			"confirmPassword": plainPassword,
 		}).

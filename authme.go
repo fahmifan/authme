@@ -7,13 +7,20 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
 	ErrNotFound = errors.New("not found")
 )
+
+type Locker interface {
+	// Lock lock key and execute fn, if key already locked, fn will wait until key unlocked.
+	Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error
+}
 
 type DBTX interface {
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
@@ -158,8 +165,7 @@ func (user User) VerifyStatus(verifyToken string) (User, error) {
 	return user, nil
 }
 
-// DefaultPasswordHasher is a default implementation of PasswordHasher
-// using bcrypt algorithm.
+// DefaultPasswordHasher default implementation of PasswordHasher using bcrypt.
 type DefaultPasswordHasher struct {
 }
 
@@ -174,4 +180,26 @@ func (br DefaultPasswordHasher) HashPassword(plainPassword string) (string, erro
 
 func (br DefaultPasswordHasher) Compare(hashedPassword, plainPassword string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
+}
+
+// DefaultLocker locker default implementation using Go singleflight
+type DefaultLocker struct {
+	fligthGroup *singleflight.Group
+}
+
+func NewDefaultLocker() *DefaultLocker {
+	return &DefaultLocker{fligthGroup: &singleflight.Group{}}
+}
+
+func (l *DefaultLocker) Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error {
+	const ttl = 10 * time.Second
+	timer := time.AfterFunc(ttl, func() { l.fligthGroup.Forget(key) })
+	defer timer.Stop()
+
+	_, err, _ := l.fligthGroup.Do(key, func() (any, error) {
+		return nil, fn(ctx)
+	})
+	l.fligthGroup.Forget(key)
+
+	return err
 }

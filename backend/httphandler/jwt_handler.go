@@ -1,7 +1,9 @@
 package httphandler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/fahmifan/authme"
@@ -76,11 +78,23 @@ func (handler *JWTAuthHandler) handleAuth(jwtauther auth.JWTAuther) http.Handler
 			return
 		}
 
-		res, err := jwtauther.Auth(r.Context(), handler.accountHandler.db, auth.AuthRequest{
-			PID:           req.Email,
-			PlainPassword: req.Password,
+		res := auth.JWTAuthResponse{}
+		lockKey := "jwt_handler:auth:email:" + req.Email
+		err := handler.accountHandler.locker.Lock(r.Context(), lockKey, func(ctx context.Context) (err error) {
+			res, err = jwtauther.Auth(r.Context(), handler.accountHandler.db, auth.AuthRequest{
+				PID:           req.Email,
+				PlainPassword: req.Password,
+			})
+			return err
 		})
 		if err != nil {
+			if errors.Is(err, authme.ErrNotFound) {
+				writeJSON(w, http.StatusNotFound, HttpError{
+					Err: "not found",
+				})
+				return
+			}
+
 			writeJSON(w, http.StatusBadRequest, HttpError{
 				Err: err.Error(),
 			})

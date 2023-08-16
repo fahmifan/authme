@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,6 +35,10 @@ type AuthRequest struct {
 	PlainPassword string
 }
 
+func isNotFoundErr(err error) bool {
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, authme.ErrNotFound)
+}
+
 func (auther *Auther) Auth(ctx context.Context, tx authme.DBTX, req AuthRequest) (user authme.User, err error) {
 	if req.PID == "" {
 		return authme.User{}, fmt.Errorf("pid is required")
@@ -43,6 +49,9 @@ func (auther *Auther) Auth(ctx context.Context, tx authme.DBTX, req AuthRequest)
 
 	user, err = auther.userReader.FindByPID(ctx, tx, req.PID)
 	if err != nil {
+		if isNotFoundErr(err) {
+			return authme.User{}, authme.ErrNotFound
+		}
 		return authme.User{}, fmt.Errorf("read user: %w", err)
 	}
 
@@ -68,8 +77,4 @@ func (auther *Auther) Auth(ctx context.Context, tx authme.DBTX, req AuthRequest)
 	}
 
 	return user, nil
-}
-
-func makeLockKey(pid string) string {
-	return fmt.Sprintf("auth:%s", pid)
 }

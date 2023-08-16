@@ -15,7 +15,7 @@ type JWTTestSuite struct {
 
 func (suite *JWTTestSuite) TestLogin() {
 	suite.Run("login", func() {
-		testUser := suite.prepareTestUser()
+		testUser := suite.prepareDefaultTestUser()
 
 		// login
 		resp, err := suite.rr.R().
@@ -41,7 +41,7 @@ func (suite *JWTTestSuite) TestLogin() {
 	})
 
 	suite.Run("login multiple times", func() {
-		testUser := suite.prepareTestUser()
+		testUser := suite.prepareDefaultTestUser()
 
 		// login 1
 		resp, err := suite.rr.R().
@@ -77,11 +77,25 @@ func (suite *JWTTestSuite) TestLogin() {
 		suite.NotEmpty(loginResp.RefreshToken)
 		suite.NotZero(loginResp.ExpiredAt)
 	})
+
+	suite.Run("login with invalid credentials", func() {
+		resp, err := suite.rr.R().
+			SetBody(Map{
+				"email":    "notfound@email.com",
+				"password": "invalid",
+			}).
+			Post("/rest/auth")
+
+		suite.NoError(err)
+		if resp.StatusCode() != http.StatusNotFound {
+			suite.FailNow(resp.String())
+		}
+	})
 }
 
 func (suite *JWTTestSuite) TestRefreshToken() {
 	suite.Run("refreshing token", func() {
-		testUser := suite.prepareTestUser()
+		testUser := suite.prepareDefaultTestUser()
 
 		// login
 		resp, err := suite.rr.R().

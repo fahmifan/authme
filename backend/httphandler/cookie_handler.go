@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -98,11 +99,23 @@ func (handler *CookieAuthHandler) handleAuth(
 			return
 		}
 
-		sess, err := sessionAuther.Auth(r.Context(), handler.accountHandler.db, auth.AuthRequest{
-			PID:           req.Email,
-			PlainPassword: req.Password,
+		sess := auth.SessionAuthResponse{}
+		lockKey := "cookie_handler:auth:email:" + req.Email
+		err := handler.accountHandler.locker.Lock(r.Context(), lockKey, func(ctx context.Context) (err error) {
+			sess, err = sessionAuther.Auth(r.Context(), handler.accountHandler.db, auth.AuthRequest{
+				PID:           req.Email,
+				PlainPassword: req.Password,
+			})
+			return err
 		})
 		if err != nil {
+			if errors.Is(err, authme.ErrNotFound) {
+				writeJSON(w, http.StatusNotFound, HttpError{
+					Err: "not found",
+				})
+				return
+			}
+
 			writeJSON(w, http.StatusBadRequest, HttpError{
 				Err: err.Error(),
 			})

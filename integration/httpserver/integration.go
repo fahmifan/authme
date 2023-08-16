@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/backend/httphandler"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/backend/smtpmail"
@@ -52,6 +53,7 @@ func Run() error {
 		DB:                  db,
 		MailComposer:        mailComposer,
 		Mailer:              smtpMailer,
+		Locker:              authme.NewDefaultLocker(),
 	})
 
 	if err := accountHandler.MigrateUp(); err != nil {
@@ -90,7 +92,6 @@ func Run() error {
 		r.With(cookieMiddleware.Authenticate()).Get("/private-cookie", handlePrivateCookie)
 	})
 
-	fmt.Println("listen on :8080")
 	httpserver = &http.Server{
 		Addr:    ":8080",
 		Handler: router,
