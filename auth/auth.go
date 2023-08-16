@@ -8,18 +8,14 @@ import (
 	"github.com/fahmifan/authme"
 )
 
-type UserReader interface {
-	FindByPID(ctx context.Context, dbtx authme.DBTX, pid string) (authme.User, error)
-}
-
 type Auther struct {
-	userReader     UserReader
+	userReader     authme.UserReader
 	passwordHasher authme.PasswordHasher
 	retryCountRW   authme.RetryCountReadWriter
 }
 
 type NewAuthArg struct {
-	UserReader     UserReader
+	UserReader     authme.UserReader
 	PasswordHasher authme.PasswordHasher
 	RetryCountRW   authme.RetryCountReadWriter
 }
