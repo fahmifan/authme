@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fahmifan/authme"
+	"github.com/fahmifan/authme/backend/httphandler"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/integration/httpserver"
 	"github.com/fahmifan/authme/register"
@@ -96,6 +97,8 @@ func (suite *Base) waitServer() error {
 // Create new user and verify it.
 // Copied from account_integration_test.go#TestRegisterAndVerify
 func (suite *Base) prepareDefaultTestUser() TestUser {
+	suite.T().Helper()
+
 	name := "test user"
 	email := "test@email.com"
 	plainPassword := "test1234"
@@ -103,13 +106,38 @@ func (suite *Base) prepareDefaultTestUser() TestUser {
 	return suite.preapreTestUser(name, email, plainPassword)
 }
 
-func (suite *Base) preapreTestUser(name, email, plainPassword string) TestUser {
+func (suite *Base) getCSRFToken() (token string, header string) {
+	suite.T().Helper()
+
 	resp, err := suite.rr.R().
+		Get("/rest/auth/csrf")
+	suite.NoError(err)
+
+	if resp.StatusCode() != http.StatusOK {
+		suite.FailNow(resp.String())
+	}
+
+	csrfRes := struct {
+		CSRFToken string `json:"csrf_token"`
+	}{}
+	err = json.Unmarshal(resp.Body(), &csrfRes)
+	suite.NoError(err)
+
+	return csrfRes.CSRFToken, "x-csrf-token"
+}
+
+func (suite *Base) preapreTestUser(name, email, plainPassword string) TestUser {
+	suite.T().Helper()
+
+	csrfToken, csrfHeader := suite.getCSRFToken()
+
+	resp, err := suite.rr.R().
+		SetHeader(csrfHeader, csrfToken).
 		SetBody(Map{
-			"name":            name,
-			"email":           email,
-			"password":        plainPassword,
-			"confirmPassword": plainPassword,
+			"name":             name,
+			"email":            email,
+			"password":         plainPassword,
+			"confirm_password": plainPassword,
 		}).
 		Post("/rest/auth/register")
 	suite.NoError(err)
@@ -152,4 +180,36 @@ func (suite *Base) prepareLoginCookies(testUser TestUser) []*http.Cookie {
 	suite.Require().Equal(http.StatusOK, resp.StatusCode())
 
 	return resp.RawResponse.Cookies()
+}
+
+type JWTResponse struct {
+	httphandler.JWTAuthResponse
+	Cookies []*http.Cookie
+}
+
+func (jwtRes JWTResponse) AuthHeader() (header, value string) {
+	return "Authorization", "Bearer " + jwtRes.AccessToken
+}
+
+func (suite *Base) prepareLoginJWT(testUser TestUser) JWTResponse {
+	resp, err := suite.rr.R().
+		SetBody(Map{
+			"email":    testUser.User.Email,
+			"password": testUser.PlainPassword,
+		}).
+		Post("/rest/auth")
+
+	suite.NoError(err)
+	if resp.StatusCode() != http.StatusOK {
+		suite.FailNow(resp.String())
+	}
+
+	authRes := httphandler.JWTAuthResponse{}
+	err = json.Unmarshal(resp.Body(), &authRes)
+	suite.Require().NoError(err)
+
+	return JWTResponse{
+		JWTAuthResponse: authRes,
+		Cookies:         resp.RawResponse.Cookies(),
+	}
 }

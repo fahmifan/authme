@@ -92,15 +92,15 @@ const (
 
 type User struct {
 	// GUID is global unique identifier can be UUID, Integer, etc.
-	GUID string
+	GUID string `json:"guid"`
 	// PID is personal identifier can be email, username etc.
-	PID          string
-	Email        string
-	Name         string
-	PasswordHash string
+	PID          string `json:"pid"`
+	Email        string `json:"email"`
+	Name         string `json:"name"`
+	PasswordHash string `json:"password_hash"`
 	// VerifyToken to verify UserStatus
-	VerifyToken string
-	Status      UserStatus
+	VerifyToken string     `json:"verify_token"`
+	Status      UserStatus `json:"status"`
 }
 
 type CreateUserRequest struct {

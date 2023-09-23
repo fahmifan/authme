@@ -18,12 +18,15 @@ type AccountTestSuite struct {
 
 func (suite *AccountTestSuite) TestRegisterAndVerify() {
 	suite.Run("register & verify", func() {
+		csrfToken, csrfHeader := suite.getCSRFToken()
+
 		resp, err := suite.rr.R().
+			SetHeader(csrfHeader, csrfToken).
 			SetBody(Map{
-				"name":            "test user",
-				"email":           "test@email.com",
-				"password":        "test1234",
-				"confirmPassword": "test1234",
+				"name":             "test user",
+				"email":            "test@email.com",
+				"password":         "test1234",
+				"confirm_password": "test1234",
 			}).
 			Post("/rest/auth/register")
 

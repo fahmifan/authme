@@ -31,8 +31,8 @@ func NewAuth(arg NewAuthArg) Auther {
 }
 
 type AuthRequest struct {
-	PID           string
-	PlainPassword string
+	PID           string `json:"pid"`
+	PlainPassword string `json:"plain_password"`
 }
 
 func isNotFoundErr(err error) bool {

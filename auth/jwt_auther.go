@@ -40,9 +40,10 @@ func NewJWTAuther(arg NewJWTAutherArg) JWTAuther {
 }
 
 type JWTAuthResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiredAt    int64  `json:"expired_at"`
+	AccessToken   string    `json:"access_token"`
+	RefreshToken  string    `json:"refresh_token"`
+	ExpiredAt     int64     `json:"expired_at"`
+	ExpiredAtTime time.Time `json:"-"`
 }
 
 func (auther JWTAuther) Auth(ctx context.Context, tx *sql.DB, req AuthRequest) (JWTAuthResponse, error) {
@@ -73,9 +74,10 @@ func (auther JWTAuther) Auth(ctx context.Context, tx *sql.DB, req AuthRequest) (
 		}
 
 		res = JWTAuthResponse{
-			AccessToken:  accessToken,
-			RefreshToken: session.Token,
-			ExpiredAt:    expiredAt.Truncate(time.Second).Unix(),
+			AccessToken:   accessToken,
+			RefreshToken:  session.Token,
+			ExpiredAt:     expiredAt.Truncate(time.Second).Unix(),
+			ExpiredAtTime: expiredAt,
 		}
 
 		return nil

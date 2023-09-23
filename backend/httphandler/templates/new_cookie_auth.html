@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+</head>
+<body>
+    <h1>Login</h1>
+    <form method="POST" action="{{ .LoginEndpoint }}">
+        <input type="hidden" name="gorilla.csrf.Token" value="{{ .CSRFTag }}">
+        <input type="text" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <input type="submit" value="Login">
+    </form>
+    <a href="{{ .RegisterEndpoint }}">Register</a>
+</body>
+</html>

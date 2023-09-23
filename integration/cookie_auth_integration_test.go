@@ -143,6 +143,16 @@ func (suite *CookieTestSuite) TestLoginConcurrent() {
 }
 
 func (suite *CookieTestSuite) TestPrivateRoute() {
+	suite.Run("failed unauthenticated private route", func() {
+		resp, err := suite.rr.R().
+			Get("/private-cookie")
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusUnauthorized {
+			suite.FailNow(resp.String())
+		}
+	})
+
 	suite.Run("private route", func() {
 		testUser := suite.prepareDefaultTestUser()
 		cookies := suite.prepareLoginCookies(testUser)

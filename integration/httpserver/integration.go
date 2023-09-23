@@ -54,6 +54,9 @@ func Run() error {
 		MailComposer:        mailComposer,
 		Mailer:              smtpMailer,
 		Locker:              authme.NewDefaultLocker(),
+		RegisterRedirectURL: "http://localhost:8080",
+		CSRFSecret:          securecookie.GenerateRandomKey(16),
+		CSRFSecure:          false,
 	})
 
 	if err := accountHandler.MigrateUp(); err != nil {
@@ -64,6 +67,7 @@ func Run() error {
 		JWTSecret:      []byte("secret"),
 		RoutePrefix:    "/rest",
 		AccountHandler: accountHandler,
+		SecureCookie:   true,
 	})
 
 	cookieAuthHandler := httphandler.NewCookieAuthHandler(httphandler.NewCookieAuthHandlerArg{
@@ -71,6 +75,7 @@ func Run() error {
 		AccountHandler: accountHandler,
 		CookieDomain:   "localhost",
 		CookieSecret:   securecookie.GenerateRandomKey(16),
+		SecureCookie:   true,
 	})
 
 	cookieRouter, err := cookieAuthHandler.CookieAuthRouter()
@@ -78,6 +83,7 @@ func Run() error {
 		return fmt.Errorf("run: router: %w", err)
 	}
 	cookieMiddleware := cookieAuthHandler.Middleware()
+	jwtMiddleware := jwtAuthHandler.Middleware()
 
 	restRouter, err := jwtAuthHandler.JWTAuthRouter()
 	if err != nil {
@@ -89,7 +95,11 @@ func Run() error {
 	router.Handle("/rest*", restRouter)
 
 	router.Group(func(r chi.Router) {
-		r.With(cookieMiddleware.Authenticate()).Get("/private-cookie", handlePrivateCookie)
+		r.With(
+			cookieMiddleware.SetAuthUserToCtx(),
+			cookieMiddleware.Authenticate(),
+		).Get("/private-cookie", handlePrivateRoute)
+		r.With(jwtMiddleware.Authenticate()).Get("/private-jwt", handlePrivateRoute)
 	})
 
 	httpserver = &http.Server{
@@ -105,7 +115,7 @@ func Run() error {
 	return nil
 }
 
-func handlePrivateCookie(w http.ResponseWriter, r *http.Request) {
+func handlePrivateRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "ok")
 }

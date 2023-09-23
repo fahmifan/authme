@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/fahmifan/authme/auth"
+	"github.com/fahmifan/authme/backend/httphandler"
 )
 
 type JWTTestSuite struct {
@@ -31,13 +31,18 @@ func (suite *JWTTestSuite) TestLogin() {
 			suite.FailNow(resp.String())
 		}
 
-		loginResp := auth.JWTAuthResponse{}
+		loginResp := httphandler.JWTAuthResponse{}
 		err = json.Unmarshal(resp.Body(), &loginResp)
 		suite.NoError(err)
 
 		suite.NotEmpty(loginResp.AccessToken)
-		suite.NotEmpty(loginResp.RefreshToken)
 		suite.NotZero(loginResp.ExpiredAt)
+
+		cookie := resp.Cookies()[0]
+		suite.Require().NotEmpty(cookie)
+		suite.Require().Equal(httphandler.CookieRefreshToken, cookie.Name)
+		suite.Require().Equal(true, cookie.Secure)
+		suite.Require().NotEmpty(cookie.Value)
 	})
 
 	suite.Run("login multiple times", func() {
@@ -69,12 +74,11 @@ func (suite *JWTTestSuite) TestLogin() {
 			suite.FailNow(resp.String())
 		}
 
-		loginResp := auth.JWTAuthResponse{}
+		loginResp := httphandler.JWTAuthResponse{}
 		err = json.Unmarshal(resp.Body(), &loginResp)
 		suite.NoError(err)
 
 		suite.NotEmpty(loginResp.AccessToken)
-		suite.NotEmpty(loginResp.RefreshToken)
 		suite.NotZero(loginResp.ExpiredAt)
 	})
 
@@ -94,38 +98,70 @@ func (suite *JWTTestSuite) TestLogin() {
 }
 
 func (suite *JWTTestSuite) TestRefreshToken() {
+	suite.Run("failed refreshing token, no cookie", func() {
+		resp, err := suite.rr.R().
+			Post("/rest/auth/refresh")
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusBadRequest {
+			suite.FailNow(resp.String())
+		}
+	})
+
 	suite.Run("refreshing token", func() {
 		testUser := suite.prepareDefaultTestUser()
-
-		// login
-		resp, err := suite.rr.R().
-			SetBody(Map{
-				"email":    testUser.User.Email,
-				"password": testUser.PlainPassword,
-			}).
-			Post("/rest/auth")
-		suite.NoError(err)
-
-		loginResp := auth.JWTAuthResponse{}
-		err = json.Unmarshal(resp.Body(), &loginResp)
-		suite.NoError(err)
+		jwtRes := suite.prepareLoginJWT(testUser)
 
 		// refreshing token
-		resp, err = suite.rr.R().SetBody(Map{
-			"refresh_token": loginResp.RefreshToken,
-		}).Post("/rest/auth/refresh")
+		resp, err := suite.rr.R().
+			SetCookies(jwtRes.Cookies).
+			Post("/rest/auth/refresh")
 		suite.NoError(err)
 
 		if resp.StatusCode() != http.StatusOK {
 			suite.FailNow(resp.String())
 		}
 
-		refreshResp := auth.JWTAuthResponse{}
+		refreshResp := httphandler.JWTAuthResponse{}
 		err = json.Unmarshal(resp.Body(), &refreshResp)
 		suite.NoError(err)
 
 		suite.NotEmpty(refreshResp.AccessToken)
-		suite.NotEmpty(refreshResp.RefreshToken)
 		suite.NotZero(refreshResp.ExpiredAt)
+
+		cookie := resp.Cookies()[0]
+		suite.Require().NotEmpty(cookie)
+		suite.Require().Equal(httphandler.CookieRefreshToken, cookie.Name)
+		suite.Require().Equal(true, cookie.Secure)
+		suite.Require().NotEmpty(cookie.Value)
+	})
+}
+
+func (suite *JWTTestSuite) TestPrivateRoute() {
+	suite.Run("failed unauthenticated private route", func() {
+		resp, err := suite.rr.R().
+			SetHeader("Authorization", "Bearer invalid.token").
+			Get("/private-jwt")
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusUnauthorized {
+			suite.FailNow(resp.String())
+		}
+	})
+
+	suite.Run("ok private route", func() {
+		testUser := suite.prepareDefaultTestUser()
+		jwtAuth := suite.prepareLoginJWT(testUser)
+
+		resp, err := suite.rr.R().
+			SetHeader(jwtAuth.AuthHeader()).
+			Get("/private-jwt")
+		suite.NoError(err)
+
+		if resp.StatusCode() != http.StatusOK {
+			suite.FailNow(resp.String())
+		}
+
+		suite.Equal("ok", resp.String())
 	})
 }

@@ -46,10 +46,10 @@ type UserSession struct {
 }
 
 type Session struct {
-	GUID           string
-	User           UserSession
-	Token          string
-	TokenExpiredAt time.Time
+	GUID           string      `json:"guid"`
+	User           UserSession `json:"user"`
+	Token          string      `json:"token"`
+	TokenExpiredAt time.Time   `json:"token_expired_at"`
 }
 
 func CreateSession(user authme.User, now time.Time, guid string) (Session, error) {
@@ -67,7 +67,7 @@ func CreateSession(user authme.User, now time.Time, guid string) (Session, error
 	return sess.Refresh(now)
 }
 
-func (sess Session) CreateAccessToken(secert []byte, now time.Time) (token string, expiredAt time.Time, err error) {
+func (sess Session) CreateAccessToken(secret []byte, now time.Time) (token string, expiredAt time.Time, err error) {
 	expiredAt = now.Add(AccessTokenExpireDuration)
 
 	jwtAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, JWTCalim{
@@ -78,7 +78,7 @@ func (sess Session) CreateAccessToken(secert []byte, now time.Time) (token strin
 		},
 	})
 
-	accessToken, err := jwtAccessToken.SignedString(secert)
+	accessToken, err := jwtAccessToken.SignedString(secret)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("sign access token: %w", err)
 	}
@@ -97,6 +97,27 @@ func (sess Session) Refresh(now time.Time) (Session, error) {
 	sess.TokenExpiredAt = expiredAt
 
 	return sess, nil
+}
+
+type AuthUser struct {
+	GUID string
+	PID  string
+}
+
+func VerifyAccessToken(secret []byte, accessToken string) (AuthUser, error) {
+	claims := JWTCalim{}
+
+	_, err := jwt.ParseWithClaims(accessToken, &claims, func(token *jwt.Token) (interface{}, error) {
+		return secret, nil
+	})
+	if err != nil {
+		return AuthUser{}, fmt.Errorf("JWTAuther: ParseWithClaims: %w", err)
+	}
+
+	return AuthUser{
+		GUID: claims.UserGUID,
+		PID:  claims.UserPID,
+	}, nil
 }
 
 func (sess Session) isTokenExpired() bool {

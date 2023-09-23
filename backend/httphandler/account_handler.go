@@ -3,22 +3,29 @@ package httphandler
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
+	"strings"
 
 	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/register"
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
 )
 
 const (
 	PathHealthz        = "/healthz"
 	PathRegister       = "/auth/register"
+	PathNewRegister    = "/auth/register/new"
 	PathVerifyRegister = "/auth/verify"
 	PathRefreshToken   = "/auth/refresh"
 	PathAuth           = "/auth"
+	PathNewAuth        = "/auth/new"
+	PathCSRFToken      = "/auth/csrf"
 )
 
 type HttpError struct {
@@ -26,20 +33,21 @@ type HttpError struct {
 	Code int    `json:"code"`
 }
 
-type AccountHandler struct {
-	verificationBaseURL string
-	db                  *sql.DB
-	locker              authme.Locker
-	mailComposer        register.RegisterMailComposer
-	mailer              authme.Mailer
-}
-
 type NewAccountHandlerArg struct {
 	VerificationBaseURL string
+	RegisterRedirectURL string
 	DB                  *sql.DB
 	MailComposer        register.RegisterMailComposer
 	Mailer              authme.Mailer
 	Locker              authme.Locker
+	CSRFSecret          []byte
+	CSRFSecure          bool
+}
+
+type AccountHandler struct {
+	NewAccountHandlerArg
+
+	registerer register.Register
 }
 
 func NewAccountHandler(arg NewAccountHandlerArg) *AccountHandler {
@@ -47,17 +55,11 @@ func NewAccountHandler(arg NewAccountHandlerArg) *AccountHandler {
 		arg.Locker = authme.NewDefaultLocker()
 	}
 
-	return &AccountHandler{
-		db:                  arg.DB,
-		mailComposer:        arg.MailComposer,
-		verificationBaseURL: arg.VerificationBaseURL,
-		mailer:              arg.Mailer,
-		locker:              arg.Locker,
-	}
+	return &AccountHandler{NewAccountHandlerArg: arg}
 }
 
 func (handler *AccountHandler) MigrateUp() error {
-	if err := psql.MigrateUp(handler.db); err != nil {
+	if err := psql.MigrateUp(handler.DB); err != nil {
 		return fmt.Errorf("run: migrate up: %w", err)
 	}
 
@@ -69,20 +71,29 @@ func (handler *AccountHandler) AccountRouter(routePrefix string) (*chi.Mux, erro
 	guidGenerator := psql.UUIDGenerator{}
 	userRW := psql.NewUserReadWriter()
 
-	registerer := register.NewRegister(register.NewRegisterArgs{
-		VerificationBaseURL: handler.verificationBaseURL,
+	csrfMdw := csrf.Protect(
+		handler.CSRFSecret,
+		csrf.SameSite(csrf.SameSiteDefaultMode),
+		csrf.Secure(handler.CSRFSecure),
+		csrf.RequestHeader("x-csrf-token"),
+	)
+
+	handler.registerer = register.NewRegister(register.NewRegisterArgs{
+		VerificationBaseURL: handler.VerificationBaseURL,
 		UserRW:              userRW,
 		PasswordHasher:      passHasher,
-		MailComposer:        handler.mailComposer,
+		MailComposer:        handler.MailComposer,
 		GUIDGenerator:       guidGenerator,
-		Mailer:              handler.mailer,
+		Mailer:              handler.Mailer,
 	})
 
 	router := chi.NewRouter()
 
 	router.Get(routePrefix+PathHealthz, handler.handleHelathz())
-	router.Post(routePrefix+PathRegister, handler.handleRegister(registerer))
-	router.Get(routePrefix+PathVerifyRegister, handler.handleVerifyRegistration(registerer))
+	router.With(csrfMdw).Get(routePrefix+PathNewRegister, handler.handleNewRegister(routePrefix))
+	router.With(csrfMdw).Post(routePrefix+PathRegister, handler.handleRegister())
+	router.Get(routePrefix+PathVerifyRegister, handler.handleVerifyRegistration())
+	router.With(csrfMdw).Get(routePrefix+PathCSRFToken, handler.handleCSRFToken())
 
 	return router, nil
 }
@@ -94,7 +105,45 @@ func (handler *AccountHandler) handleHelathz() http.HandlerFunc {
 	}
 }
 
-func (handler *AccountHandler) handleRegister(registerer register.Register) http.HandlerFunc {
+func (handler *AccountHandler) handleCSRFToken() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"csrf_token": csrf.Token(r),
+		})
+	}
+}
+
+//go:embed templates
+var templateFS embed.FS
+
+func (handler *AccountHandler) handleNewRegister(routePrefix string) http.HandlerFunc {
+	tpl, err := template.ParseFS(templateFS, "templates/*.html")
+	if err != nil {
+		panic(err)
+	}
+
+	type TplData struct {
+		RegisterEndpoint template.JSStr
+		LoginEndpoint    string
+		CSRFTag          template.JSStr
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		tplData := TplData{
+			RegisterEndpoint: template.JSStr(routePrefix + PathRegister),
+			LoginEndpoint:    routePrefix + PathAuth + "/new",
+			CSRFTag:          template.JSStr(csrf.Token(r)),
+		}
+
+		err := tpl.ExecuteTemplate(w, "new_register.html", tplData)
+		if err != nil {
+			fmt.Println("AccountHandler: handleNewRegister: ", err)
+			return
+		}
+	}
+}
+
+func (handler *AccountHandler) handleRegister() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
@@ -102,19 +151,34 @@ func (handler *AccountHandler) handleRegister(registerer register.Register) http
 			Name            string `json:"name" validate:"required"`
 			Email           string `json:"email" validate:"required,email"`
 			PlainPassword   string `json:"password" validate:"required,min=8"`
-			ConfirmPassword string `json:"confirmPassword" validate:"required,min=8"`
+			ConfirmPassword string `json:"confirm_password" validate:"required,min=8"`
 		}{}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+
+		switch contentType := r.Header.Get("Content-Type"); strings.ToLower(contentType) {
+		case "application/json":
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, HttpError{
+					Err: err.Error(),
+				})
+				return
+			}
+		case "application/x-www-form-urlencoded":
+			req.Name = r.FormValue("name")
+			req.Email = r.FormValue("email")
+			req.PlainPassword = r.FormValue("password")
+			req.ConfirmPassword = r.FormValue("confirm_password")
+
+		default:
 			writeJSON(w, http.StatusBadRequest, HttpError{
-				Err: err.Error(),
+				Err: "invalid content type",
 			})
 			return
 		}
 
 		res := register.User{}
 		lockKey := fmt.Sprintf("account_handler:register:email:%s", req.Email)
-		err = handler.locker.Lock(r.Context(), lockKey, func(ctx context.Context) error {
-			res, err = registerer.Register(r.Context(), handler.db, register.RegisterRequest{
+		err = handler.Locker.Lock(r.Context(), lockKey, func(ctx context.Context) error {
+			res, err = handler.registerer.Register(r.Context(), handler.DB, register.RegisterRequest{
 				PID:             req.Email,
 				Name:            req.Name,
 				Email:           req.Email,
@@ -130,16 +194,21 @@ func (handler *AccountHandler) handleRegister(registerer register.Register) http
 			return
 		}
 
-		writeJSON(w, http.StatusOK, res)
+		switch contentType := r.Header.Get("Content-Type"); strings.ToLower(contentType) {
+		case "application/json":
+			writeJSON(w, http.StatusOK, res)
+		case "application/x-www-form-urlencoded":
+			http.Redirect(w, r, handler.RegisterRedirectURL, http.StatusSeeOther)
+		}
 	}
 }
 
-func (handler *AccountHandler) handleVerifyRegistration(registerer register.Register) http.HandlerFunc {
+func (handler *AccountHandler) handleVerifyRegistration() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pid := r.URL.Query().Get("pid")
 		token := r.URL.Query().Get("token")
 
-		res, err := registerer.VerifyRegistration(r.Context(), handler.db, register.VerifyRegistrationRequest{
+		res, err := handler.registerer.VerifyRegistration(r.Context(), handler.DB, register.VerifyRegistrationRequest{
 			PID:         pid,
 			VerifyToken: token,
 		})

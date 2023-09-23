@@ -24,12 +24,12 @@ type GUIDGenerator interface {
 
 type User struct {
 	// GUID is global unique identifier can be UUID, Integer, etc.
-	GUID string
+	GUID string `json:"guid"`
 	// PID is personal identifier can be email, username etc.
-	PID    string
-	Email  string
-	Name   string
-	Status authme.UserStatus
+	PID    string            `json:"pid"`
+	Email  string            `json:"email"`
+	Name   string            `json:"name"`
+	Status authme.UserStatus `json:"status"`
 }
 
 // Register is a use case for registering a new user.
