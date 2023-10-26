@@ -2,25 +2,60 @@ package authme
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
 	ErrNotFound = errors.New("not found")
 )
 
+type Locker interface {
+	// Lock lock key and execute fn, if key already locked, fn will wait until key unlocked.
+	Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error
+}
+
+type DBTX interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	PrepareContext(context.Context, string) (*sql.Stmt, error)
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
+func Transaction(ctx context.Context, db *sql.DB, fn func(ctx context.Context, tx DBTX) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+
+	if fnErr := fn(ctx, tx); fnErr != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("rollback tx: %w", rbErr)
+		}
+		return fnErr
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	return nil
+}
+
 type UserReader interface {
-	FindByPID(ctx context.Context, pid string) (User, error)
+	FindByPID(ctx context.Context, tx DBTX, pid string) (User, error)
 }
 
 type UserWriter interface {
-	Create(ctx context.Context, user User) (User, error)
-	Update(ctx context.Context, user User) (User, error)
+	Create(ctx context.Context, tx DBTX, user User) (User, error)
+	Update(ctx context.Context, tx DBTX, user User) (User, error)
 }
 
 type UserReadWriter interface {
@@ -31,10 +66,6 @@ type UserReadWriter interface {
 type PasswordHasher interface {
 	HashPassword(plainPassword string) (string, error)
 	Compare(hashedPassword, plainPassword string) error
-}
-
-type Locker interface {
-	Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error
 }
 
 type MailerSendArg struct {
@@ -61,15 +92,15 @@ const (
 
 type User struct {
 	// GUID is global unique identifier can be UUID, Integer, etc.
-	GUID string
+	GUID string `json:"guid"`
 	// PID is personal identifier can be email, username etc.
-	PID          string
-	Email        string
-	Name         string
-	PasswordHash string
+	PID          string `json:"pid"`
+	Email        string `json:"email"`
+	Name         string `json:"name"`
+	PasswordHash string `json:"password_hash"`
 	// VerifyToken to verify UserStatus
-	VerifyToken string
-	Status      UserStatus
+	VerifyToken string     `json:"verify_token"`
+	Status      UserStatus `json:"status"`
 }
 
 type CreateUserRequest struct {
@@ -134,8 +165,7 @@ func (user User) VerifyStatus(verifyToken string) (User, error) {
 	return user, nil
 }
 
-// DefaultPasswordHasher is a default implementation of PasswordHasher
-// using bcrypt algorithm.
+// DefaultPasswordHasher default implementation of PasswordHasher using bcrypt.
 type DefaultPasswordHasher struct {
 }
 
@@ -150,4 +180,26 @@ func (br DefaultPasswordHasher) HashPassword(plainPassword string) (string, erro
 
 func (br DefaultPasswordHasher) Compare(hashedPassword, plainPassword string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
+}
+
+// DefaultLocker locker default implementation using Go singleflight
+type DefaultLocker struct {
+	fligthGroup *singleflight.Group
+}
+
+func NewDefaultLocker() *DefaultLocker {
+	return &DefaultLocker{fligthGroup: &singleflight.Group{}}
+}
+
+func (l *DefaultLocker) Lock(ctx context.Context, key string, fn func(ctx context.Context) error) error {
+	const ttl = 10 * time.Second
+	timer := time.AfterFunc(ttl, func() { l.fligthGroup.Forget(key) })
+	defer timer.Stop()
+
+	_, err, _ := l.fligthGroup.Do(key, func() (any, error) {
+		return nil, fn(ctx)
+	})
+	l.fligthGroup.Forget(key)
+
+	return err
 }

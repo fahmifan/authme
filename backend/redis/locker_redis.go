@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fahmifan/authme"
 	"github.com/redis/rueidis"
 	"github.com/redis/rueidis/rueidislock"
 )
-
-var _ authme.Locker = (*RedisLock)(nil)
 
 type RedisLock struct {
 	locker rueidislock.Locker

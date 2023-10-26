@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+</head>
+<body>
+    <h1>Login</h1>
+    <form method="POST">
+        <input type="text" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <input type="submit" value="Login">
+    </form>
+    <a href="{{ .RegisterEndpoint }}">Register</a>
+
+    <script>
+        const form = document.querySelector('form');
+        
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+
+            const password = form.querySelector('input[name="password"]');
+            const email = form.querySelector('input[name="email"]');
+            const csrfToken = {{ .CSRFTag }};
+
+            const endpoint = {{ .LoginEndpoint }}
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-csrf-token': csrfToken,
+                },
+                body: JSON.stringify({
+                    email: email.value,
+                    password: password.value,
+                })
+            })
+        });
+    </script>
+</body>
+</html>

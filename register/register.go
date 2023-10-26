@@ -3,6 +3,7 @@ package register
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base32"
 	"errors"
 	"fmt"
@@ -23,12 +24,12 @@ type GUIDGenerator interface {
 
 type User struct {
 	// GUID is global unique identifier can be UUID, Integer, etc.
-	GUID string
+	GUID string `json:"guid"`
 	// PID is personal identifier can be email, username etc.
-	PID    string
-	Email  string
-	Name   string
-	Status authme.UserStatus
+	PID    string            `json:"pid"`
+	Email  string            `json:"email"`
+	Name   string            `json:"name"`
+	Status authme.UserStatus `json:"status"`
 }
 
 // Register is a use case for registering a new user.
@@ -39,7 +40,6 @@ type Register struct {
 	mailer              authme.Mailer
 	mailComposer        RegisterMailComposer
 	guideGenerator      GUIDGenerator
-	locker              authme.Locker
 }
 
 type NewRegisterArgs struct {
@@ -49,7 +49,6 @@ type NewRegisterArgs struct {
 	Mailer              authme.Mailer
 	MailComposer        RegisterMailComposer
 	GUIDGenerator       GUIDGenerator
-	Locker              authme.Locker
 }
 
 func NewRegister(arg NewRegisterArgs) Register {
@@ -60,7 +59,6 @@ func NewRegister(arg NewRegisterArgs) Register {
 		mailer:              arg.Mailer,
 		mailComposer:        arg.MailComposer,
 		guideGenerator:      arg.GUIDGenerator,
-		locker:              arg.Locker,
 	}
 }
 
@@ -73,8 +71,8 @@ type RegisterRequest struct {
 }
 
 // Register registers a new user.
-func (register Register) Register(ctx context.Context, req RegisterRequest) (User, error) {
-	_, err := register.userRW.FindByPID(ctx, req.PID)
+func (register Register) Register(ctx context.Context, tx *sql.DB, req RegisterRequest) (User, error) {
+	_, err := register.userRW.FindByPID(ctx, tx, req.PID)
 	if err != nil && !isErrNotFound(err) {
 		return User{}, fmt.Errorf("read user: %w", err)
 	}
@@ -96,26 +94,32 @@ func (register Register) Register(ctx context.Context, req RegisterRequest) (Use
 		return User{}, fmt.Errorf("Register: CreateUser: %w", err)
 	}
 
-	user, err = register.userRW.Create(ctx, user)
-	if err != nil {
-		return User{}, fmt.Errorf("Register: save user: %w", err)
-	}
+	err = authme.Transaction(ctx, tx, func(ctx context.Context, tx authme.DBTX) error {
+		user, err = register.userRW.Create(ctx, tx, user)
+		if err != nil {
+			return fmt.Errorf("Register: save user: %w", err)
+		}
 
-	subject := register.mailComposer.ComposeSubject(user)
-	mailBody, err := register.mailComposer.ComposeBody(user, register.verificationBaseURL)
-	if err != nil {
-		return User{}, fmt.Errorf("Register: compose email body: %w", err)
-	}
+		subject := register.mailComposer.ComposeSubject(user)
+		mailBody, err := register.mailComposer.ComposeBody(user, register.verificationBaseURL)
+		if err != nil {
+			return fmt.Errorf("Register: compose email body: %w", err)
+		}
 
-	// TODO: might want to do pubsub/background to send email verification
-	err = register.mailer.Send(ctx, authme.MailerSendArg{
-		Subject: subject,
-		From:    register.mailComposer.Sender(),
-		To:      user.Email,
-		Body:    mailBody,
+		err = register.mailer.Send(ctx, authme.MailerSendArg{
+			Subject: subject,
+			From:    register.mailComposer.Sender(),
+			To:      user.Email,
+			Body:    mailBody,
+		})
+		if err != nil {
+			return fmt.Errorf("Register: send email: %w", err)
+		}
+
+		return nil
 	})
 	if err != nil {
-		return User{}, fmt.Errorf("Register: send email: %w", err)
+		return User{}, err
 	}
 
 	res := User{
@@ -134,10 +138,9 @@ type VerifyRegistrationRequest struct {
 	VerifyToken string
 }
 
-func (register Register) VerifyRegistration(ctx context.Context, req VerifyRegistrationRequest) (res User, err error) {
-	verifyLockKey := fmt.Sprintf("register:verify:%s", req.PID)
-	err = register.locker.Lock(ctx, verifyLockKey, func(ctx context.Context) error {
-		user, err := register.userRW.FindByPID(ctx, req.PID)
+func (register Register) VerifyRegistration(ctx context.Context, tx *sql.DB, req VerifyRegistrationRequest) (res User, err error) {
+	err = authme.Transaction(ctx, tx, func(ctx context.Context, tx authme.DBTX) error {
+		user, err := register.userRW.FindByPID(ctx, tx, req.PID)
 		if err != nil {
 			return fmt.Errorf("VerifyRegistration: find user: %w", err)
 		}
@@ -147,7 +150,7 @@ func (register Register) VerifyRegistration(ctx context.Context, req VerifyRegis
 			return fmt.Errorf("VerifyRegistration: verify status: %w", err)
 		}
 
-		user, err = register.userRW.Update(ctx, user)
+		user, err = register.userRW.Update(ctx, tx, user)
 		if err != nil {
 			return fmt.Errorf("VerifyRegistration: update user: %w", err)
 		}

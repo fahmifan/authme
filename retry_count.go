@@ -7,12 +7,12 @@ import (
 
 type RetryCountReader interface {
 	// GetOrCreate reads retry count for user.
-	GetOrCreate(ctx context.Context, user User) (RetryCount, error)
+	GetOrCreate(ctx context.Context, tx DBTX, user User) (RetryCount, error)
 }
 
 type ReatryCountWriter interface {
 	// Update writes retry count for user.
-	Update(ctx context.Context, rc RetryCount) (RetryCount, error)
+	Update(ctx context.Context, tx DBTX, rc RetryCount) (RetryCount, error)
 }
 
 type RetryCountReadWriter interface {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/auth"
 	"github.com/fahmifan/authme/backend/psql/sqlcs"
 	"github.com/google/uuid"
@@ -13,15 +14,14 @@ var _ auth.SessionReader = SessionReadWriter{}
 var _ auth.SessionWriter = SessionReadWriter{}
 
 type SessionReadWriter struct {
-	tx sqlcs.DBTX
 }
 
-func NewSessionReadWriter(tx sqlcs.DBTX) SessionReadWriter {
-	return SessionReadWriter{tx: tx}
+func NewSessionReadWriter() SessionReadWriter {
+	return SessionReadWriter{}
 }
 
-func (psql SessionReadWriter) FindByToken(ctx context.Context, token string) (auth.Session, error) {
-	query := sqlcs.New(psql.tx)
+func (psql SessionReadWriter) FindByToken(ctx context.Context, tx authme.DBTX, token string) (auth.Session, error) {
+	query := sqlcs.New(tx)
 
 	xsess, err := query.FindSessionByToken(ctx, token)
 	if err != nil {
@@ -44,17 +44,27 @@ func (psql SessionReadWriter) FindByToken(ctx context.Context, token string) (au
 	return sess, nil
 }
 
+func userSessionFromSQL(xsess sqlcs.User) auth.UserSession {
+	return auth.UserSession{
+		GUID:   xsess.ID.String(),
+		PID:    xsess.Email,
+		Email:  xsess.Email,
+		Name:   xsess.Name,
+		Status: authme.UserStatus(xsess.Status),
+	}
+}
+
 func sessionFromSQL(xsess sqlcs.UserSession, xuser sqlcs.User) auth.Session {
 	return auth.Session{
 		GUID:           xsess.ID.String(),
 		Token:          xsess.Token,
 		TokenExpiredAt: xsess.TokenExpiredAt,
-		User:           UserFromSQL(xuser),
+		User:           userSessionFromSQL(xuser),
 	}
 }
 
-func (psql SessionReadWriter) Create(ctx context.Context, sess auth.Session) (auth.Session, error) {
-	query := sqlcs.New(psql.tx)
+func (psql SessionReadWriter) Create(ctx context.Context, tx authme.DBTX, sess auth.Session) (auth.Session, error) {
+	query := sqlcs.New(tx)
 
 	id, err := uuid.Parse(sess.GUID)
 	if err != nil {
@@ -79,8 +89,8 @@ func (psql SessionReadWriter) Create(ctx context.Context, sess auth.Session) (au
 	return sess, nil
 }
 
-func (psql SessionReadWriter) Update(ctx context.Context, sess auth.Session) (auth.Session, error) {
-	query := sqlcs.New(psql.tx)
+func (psql SessionReadWriter) Update(ctx context.Context, tx authme.DBTX, sess auth.Session) (auth.Session, error) {
+	query := sqlcs.New(tx)
 
 	guid, err := uuid.Parse(sess.GUID)
 	if err != nil {

@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/backend/httphandler"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/backend/smtpmail"
 	"github.com/fahmifan/authme/register"
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/securecookie"
 
 	_ "github.com/lib/pq"
 )
@@ -29,6 +32,7 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("run: open db: %w", err)
 	}
+	defer db.Close()
 
 	if err := psql.MigrateUp(db); err != nil {
 		return fmt.Errorf("run: migrate up: %w", err)
@@ -42,27 +46,62 @@ func Run() error {
 		return fmt.Errorf("run: new smtp client: %w", err)
 	}
 
-	redisHost := "localhost:6379"
+	mailComposer := register.NewDefaultMailComposer("app@example.com", "Authme")
 
-	handler := httphandler.NewHTTPHandler(httphandler.NewHTTPHandlerArg{
-		RedisHost:           redisHost,
-		JWTSecret:           []byte("secret"),
+	accountHandler := httphandler.NewAccountHandler(httphandler.NewAccountHandlerArg{
 		VerificationBaseURL: "http://localhost:8080/verification",
 		DB:                  db,
-		MailComposer:        register.NewDefaultMailComposer("app@example.com", "Authme"),
+		MailComposer:        mailComposer,
 		Mailer:              smtpMailer,
+		Locker:              authme.NewDefaultLocker(),
+		RegisterRedirectURL: "http://localhost:8080",
+		CSRFSecret:          securecookie.GenerateRandomKey(16),
+		CSRFSecure:          false,
 	})
 
-	if err := handler.MigrateUp(); err != nil {
+	if err := accountHandler.MigrateUp(); err != nil {
 		return fmt.Errorf("run: migrate up: %w", err)
 	}
 
-	router, err := handler.Router()
+	jwtAuthHandler := httphandler.NewJWTAuthHandler(httphandler.NewJWTAuthHandlerArg{
+		JWTSecret:      []byte("secret"),
+		RoutePrefix:    "/rest",
+		AccountHandler: accountHandler,
+		SecureCookie:   true,
+	})
+
+	cookieAuthHandler := httphandler.NewCookieAuthHandler(httphandler.NewCookieAuthHandlerArg{
+		RoutePrefix:    "/cookie",
+		AccountHandler: accountHandler,
+		CookieDomain:   "localhost",
+		CookieSecret:   securecookie.GenerateRandomKey(16),
+		SecureCookie:   true,
+	})
+
+	cookieRouter, err := cookieAuthHandler.CookieAuthRouter()
+	if err != nil {
+		return fmt.Errorf("run: router: %w", err)
+	}
+	cookieMiddleware := cookieAuthHandler.Middleware()
+	jwtMiddleware := jwtAuthHandler.Middleware()
+
+	restRouter, err := jwtAuthHandler.JWTAuthRouter()
 	if err != nil {
 		return fmt.Errorf("run: router: %w", err)
 	}
 
-	fmt.Println("listen on :8080")
+	router := chi.NewMux()
+	router.Handle("/cookie*", cookieRouter)
+	router.Handle("/rest*", restRouter)
+
+	router.Group(func(r chi.Router) {
+		r.With(
+			cookieMiddleware.SetAuthUserToCtx(),
+			cookieMiddleware.Authenticate(),
+		).Get("/private-cookie", handlePrivateRoute)
+		r.With(jwtMiddleware.Authenticate()).Get("/private-jwt", handlePrivateRoute)
+	})
+
 	httpserver = &http.Server{
 		Addr:    ":8080",
 		Handler: router,
@@ -74,4 +113,9 @@ func Run() error {
 	}
 
 	return nil
+}
+
+func handlePrivateRoute(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "ok")
 }
