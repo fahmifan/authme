@@ -12,7 +12,6 @@ import (
 
 	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/auth"
-	"github.com/fahmifan/authme/backend/psql"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -21,10 +20,15 @@ type JWTAuthHandler struct {
 }
 
 type NewJWTAuthHandlerArg struct {
-	JWTSecret      []byte
-	RoutePrefix    string
-	AccountHandler *AccountHandler
-	SecureCookie   bool
+	JWTSecret    []byte
+	RoutePrefix  string
+	SecureCookie bool
+
+	GUIDGenerator        authme.GUIDGenerator
+	UserReadWriter       authme.UserReadWriter
+	RetryCountReadWriter authme.RetryCountReadWriter
+	SessionReadWriter    auth.SessionReadWriter
+	AccountHandler       *AccountHandler
 }
 
 func NewJWTAuthHandler(arg NewJWTAuthHandlerArg) *JWTAuthHandler {
@@ -41,10 +45,10 @@ func (handler *JWTAuthHandler) JWTAuthRouter() (*chi.Mux, error) {
 
 	passHasher := authme.DefaultPasswordHasher{}
 
-	guidGenerator := psql.UUIDGenerator{}
-	userRW := psql.NewUserReadWriter()
-	retryCountRW := psql.NewRetryCountReadWriter()
-	sessionRW := psql.NewSessionReadWriter()
+	guidGenerator := handler.GUIDGenerator
+	userRW := handler.UserReadWriter
+	retryCountRW := handler.RetryCountReadWriter
+	sessionRW := handler.SessionReadWriter
 
 	auther := auth.NewAuth(auth.NewAuthArg{
 		UserReader:     userRW,
@@ -138,8 +142,6 @@ func (handler *JWTAuthHandler) handleAuth(jwtauther auth.JWTAuther) http.Handler
 			return
 		}
 
-		setCookieRefreshToken(w, handler.SecureCookie, authRes)
-
 		res := JWTAuthResponse{
 			AccessToken:   authRes.AccessToken,
 			ExpiredAt:     authRes.ExpiredAt,
@@ -168,8 +170,6 @@ func (handler *JWTAuthHandler) handleRefreshingToken(jwtauther auth.JWTAuther) h
 			})
 			return
 		}
-
-		setCookieRefreshToken(w, handler.SecureCookie, authRes)
 
 		res := JWTAuthResponse{
 			AccessToken:   authRes.AccessToken,

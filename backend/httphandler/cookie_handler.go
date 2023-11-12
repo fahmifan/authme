@@ -12,7 +12,6 @@ import (
 
 	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/auth"
-	"github.com/fahmifan/authme/backend/psql"
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/sessions"
 )
@@ -32,6 +31,11 @@ type NewCookieAuthHandlerArg struct {
 	CookieSecret   []byte
 	SecureCookie   bool
 
+	GUIDGenerator        authme.GUIDGenerator
+	UserReadWriter       authme.UserReadWriter
+	RetryCountReadWriter authme.RetryCountReadWriter
+	SessionReadWriter    auth.SessionReadWriter
+
 	redirectAfterLogin func(http.ResponseWriter, *http.Request)
 	csrfProtect        func(http.Handler) http.Handler
 }
@@ -40,21 +44,13 @@ func NewCookieAuthHandler(arg NewCookieAuthHandlerArg) *CookieAuthHandler {
 	return &CookieAuthHandler{NewCookieAuthHandlerArg: arg}
 }
 
-func (handler *CookieAuthHandler) MigrateUp() error {
-	if err := psql.MigrateUp(handler.AccountHandler.DB); err != nil {
-		return fmt.Errorf("run: migrate up: %w", err)
-	}
-
-	return nil
-}
-
 func (handler *CookieAuthHandler) CookieAuthRouter() (http.Handler, error) {
 	passHasher := authme.DefaultPasswordHasher{}
 
-	userRW := psql.NewUserReadWriter()
-	retryCountRW := psql.NewRetryCountReadWriter()
-	sessionRW := psql.NewSessionReadWriter()
-	guidGenerator := psql.UUIDGenerator{}
+	userRW := handler.UserReadWriter
+	retryCountRW := handler.RetryCountReadWriter
+	sessionRW := handler.SessionReadWriter
+	guidGenerator := handler.GUIDGenerator
 
 	handler.csrfProtect = csrfProtect(handler.CookieSecret, handler.SecureCookie)
 
@@ -219,7 +215,7 @@ func (handler *CookieAuthHandler) handleCSRF() http.HandlerFunc {
 func (handler *CookieAuthHandler) Middleware() *CookieMiddleware {
 	return &CookieMiddleware{
 		sessionStore:  handler.sessionStore,
-		sessionReader: psql.NewSessionReadWriter(),
+		sessionReader: handler.SessionReadWriter,
 		db:            handler.AccountHandler.DB,
 		csrfProtect:   handler.csrfProtect,
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 )
 
 type Map map[string]any
@@ -37,15 +38,15 @@ type Base struct {
 	db *sql.DB
 }
 
-func TestIntegration(t *testing.T) {
+func TestIntegrationPSQL(t *testing.T) {
 	go func() {
-		if err := httpserver.Run(); err != nil {
+		if err := httpserver.RunPSQLBackend(); err != nil {
 			require.NoError(t, err)
 		}
 	}()
 	defer httpserver.Stop(context.TODO())
 
-	base := NewBase(t)
+	base := NewPSQLBase(t)
 	err := base.waitServer()
 	require.NoError(t, err)
 
@@ -54,13 +55,42 @@ func TestIntegration(t *testing.T) {
 	suite.Run(t, &CookieTestSuite{Base: base})
 }
 
-func NewBase(t *testing.T) *Base {
+// func TestIntegrationSQLite(t *testing.T) {
+// 	go func() {
+// 		if err := httpserver.RunSQLiteBackend(); err != nil {
+// 			require.NoError(t, err)
+// 		}
+// 	}()
+// 	defer httpserver.Stop(context.TODO())
+
+// 	base := NewPostgresBase(t)
+// 	err := base.waitServer()
+// 	require.NoError(t, err)
+
+// 	suite.Run(t, &AccountTestSuite{Base: base})
+// 	suite.Run(t, &JWTTestSuite{Base: base})
+// 	suite.Run(t, &CookieTestSuite{Base: base})
+// }
+
+func NewPSQLBase(t *testing.T) *Base {
 	base := &Base{}
 	base.rr = resty.New()
 	base.rr = base.rr.SetBaseURL("http://localhost:8080")
 
 	var err error
 	base.db, err = sql.Open("postgres", "postgres://root:root@localhost:5432/authme?sslmode=disable")
+	require.NoError(t, err)
+
+	return base
+}
+
+func NewSQLiteBase(t *testing.T) *Base {
+	base := &Base{}
+	base.rr = resty.New()
+	base.rr = base.rr.SetBaseURL("http://localhost:8080")
+
+	var err error
+	base.db, err = sql.Open("sqlite", ":memory:")
 	require.NoError(t, err)
 
 	return base

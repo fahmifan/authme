@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/fahmifan/authme"
-	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/register"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
@@ -36,12 +35,15 @@ type HttpError struct {
 type NewAccountHandlerArg struct {
 	VerificationBaseURL string
 	RegisterRedirectURL string
-	DB                  *sql.DB
-	MailComposer        register.RegisterMailComposer
-	Mailer              authme.Mailer
-	Locker              authme.Locker
 	CSRFSecret          []byte
 	CSRFSecure          bool
+
+	DB             *sql.DB
+	GUIDGenerator  authme.GUIDGenerator
+	UserReadWriter authme.UserReadWriter
+	MailComposer   register.RegisterMailComposer
+	Mailer         authme.Mailer
+	Locker         authme.Locker
 }
 
 type AccountHandler struct {
@@ -58,18 +60,9 @@ func NewAccountHandler(arg NewAccountHandlerArg) *AccountHandler {
 	return &AccountHandler{NewAccountHandlerArg: arg}
 }
 
-func (handler *AccountHandler) MigrateUp() error {
-	if err := psql.MigrateUp(handler.DB); err != nil {
-		return fmt.Errorf("run: migrate up: %w", err)
-	}
-
-	return nil
-}
-
 func (handler *AccountHandler) AccountRouter(routePrefix string) (*chi.Mux, error) {
 	passHasher := authme.DefaultPasswordHasher{}
-	guidGenerator := psql.UUIDGenerator{}
-	userRW := psql.NewUserReadWriter()
+	userRW := handler.UserReadWriter
 
 	csrfMdw := csrf.Protect(
 		handler.CSRFSecret,
@@ -83,7 +76,7 @@ func (handler *AccountHandler) AccountRouter(routePrefix string) (*chi.Mux, erro
 		UserRW:              userRW,
 		PasswordHasher:      passHasher,
 		MailComposer:        handler.MailComposer,
-		GUIDGenerator:       guidGenerator,
+		GUIDGenerator:       handler.GUIDGenerator,
 		Mailer:              handler.Mailer,
 	})
 

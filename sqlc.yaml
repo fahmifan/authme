@@ -1,9 +1,0 @@
-version: "2"
-sql:
-- schema: "backend/psql/migrations"
-  queries: "backend/psql/queries"
-  engine: "postgresql"
-  gen:
-    go:
-      package: "sqlcs"
-      out: "backend/psql/sqlcs"

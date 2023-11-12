@@ -8,14 +8,16 @@ import (
 	"net/http"
 
 	"github.com/fahmifan/authme"
+	"github.com/fahmifan/authme/auth"
 	"github.com/fahmifan/authme/backend/httphandler"
 	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/backend/smtpmail"
+	"github.com/fahmifan/authme/backend/sqlite"
 	"github.com/fahmifan/authme/register"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/securecookie"
 
-	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 )
 
 var httpserver *http.Server
@@ -27,7 +29,7 @@ func Stop(ctx context.Context) {
 }
 
 // use all default implementation
-func Run() error {
+func RunPSQLBackend() error {
 	db, err := sql.Open("postgres", "postgres://root:root@localhost:5432/authme?sslmode=disable")
 	if err != nil {
 		return fmt.Errorf("run: open db: %w", err)
@@ -38,6 +40,42 @@ func Run() error {
 		return fmt.Errorf("run: migrate up: %w", err)
 	}
 
+	return run(db, &Backend{
+		GUIDGenerator:        psql.UUIDGenerator{},
+		UserReadWriter:       psql.NewUserReadWriter(),
+		RetryCountReadWriter: psql.NewRetryCountReadWriter(),
+		SessionReadWriter:    psql.NewSessionReadWriter(),
+	})
+}
+
+// use all default implementation
+func RunSQLiteBackend() error {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return fmt.Errorf("run: open db: %w", err)
+	}
+	defer db.Close()
+
+	if err := psql.MigrateUp(db); err != nil {
+		return fmt.Errorf("run: migrate up: %w", err)
+	}
+
+	return run(db, &Backend{
+		GUIDGenerator:        sqlite.UUIDGenerator{},
+		UserReadWriter:       sqlite.NewUserReadWriter(),
+		RetryCountReadWriter: sqlite.NewRetryCountReadWriter(),
+		SessionReadWriter:    sqlite.NewSessionReadWriter(),
+	})
+}
+
+type Backend struct {
+	GUIDGenerator        authme.GUIDGenerator
+	UserReadWriter       authme.UserReadWriter
+	RetryCountReadWriter authme.RetryCountReadWriter
+	SessionReadWriter    auth.SessionReadWriter
+}
+
+func run(db *sql.DB, backend *Backend) error {
 	smtpMailer, err := smtpmail.NewSmtpClient(&smtpmail.Config{
 		Host: "localhost",
 		Port: 1025, // mailhog
@@ -57,25 +95,31 @@ func Run() error {
 		RegisterRedirectURL: "http://localhost:8080",
 		CSRFSecret:          securecookie.GenerateRandomKey(16),
 		CSRFSecure:          false,
+		GUIDGenerator:       backend.GUIDGenerator,
+		UserReadWriter:      backend.UserReadWriter,
 	})
 
-	if err := accountHandler.MigrateUp(); err != nil {
-		return fmt.Errorf("run: migrate up: %w", err)
-	}
-
 	jwtAuthHandler := httphandler.NewJWTAuthHandler(httphandler.NewJWTAuthHandlerArg{
-		JWTSecret:      []byte("secret"),
-		RoutePrefix:    "/rest",
-		AccountHandler: accountHandler,
-		SecureCookie:   true,
+		JWTSecret:            []byte("secret"),
+		RoutePrefix:          "/rest",
+		AccountHandler:       accountHandler,
+		SecureCookie:         true,
+		GUIDGenerator:        backend.GUIDGenerator,
+		UserReadWriter:       backend.UserReadWriter,
+		RetryCountReadWriter: backend.RetryCountReadWriter,
+		SessionReadWriter:    backend.SessionReadWriter,
 	})
 
 	cookieAuthHandler := httphandler.NewCookieAuthHandler(httphandler.NewCookieAuthHandlerArg{
-		RoutePrefix:    "/cookie",
-		AccountHandler: accountHandler,
-		CookieDomain:   "localhost",
-		CookieSecret:   securecookie.GenerateRandomKey(16),
-		SecureCookie:   true,
+		RoutePrefix:          "/cookie",
+		AccountHandler:       accountHandler,
+		CookieDomain:         "localhost",
+		CookieSecret:         securecookie.GenerateRandomKey(16),
+		SecureCookie:         true,
+		GUIDGenerator:        backend.GUIDGenerator,
+		UserReadWriter:       backend.UserReadWriter,
+		RetryCountReadWriter: backend.RetryCountReadWriter,
+		SessionReadWriter:    backend.SessionReadWriter,
 	})
 
 	cookieRouter, err := cookieAuthHandler.CookieAuthRouter()

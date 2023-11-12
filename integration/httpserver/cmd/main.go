@@ -11,7 +11,7 @@ import (
 func main() {
 	stopChan := make(chan os.Signal, 1)
 	go func() {
-		if err := httpserver.Run(); err != nil {
+		if err := httpserver.RunPSQLBackend(); err != nil {
 			os.Exit(1)
 		}
 	}()
