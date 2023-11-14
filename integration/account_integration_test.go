@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/fahmifan/authme/backend/psql"
 	"github.com/fahmifan/authme/register"
 )
 
@@ -39,12 +38,10 @@ func (suite *AccountTestSuite) TestRegisterAndVerify() {
 		registerResp := register.User{}
 		err = json.Unmarshal(resp.Body(), &registerResp)
 		suite.NoError(err)
-
 		suite.Equal("test user", registerResp.Name)
 
 		// check verify token
-		userRW := psql.NewUserReadWriter()
-		user, err := userRW.FindByPID(context.Background(), suite.db, registerResp.PID)
+		user, err := suite.userRW.FindByPID(context.Background(), suite.db, registerResp.PID)
 		suite.NoError(err)
 
 		resp, err = suite.rr.R().

@@ -101,6 +101,8 @@ type User struct {
 	// VerifyToken to verify UserStatus
 	VerifyToken string     `json:"verify_token"`
 	Status      UserStatus `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type CreateUserRequest struct {
@@ -112,6 +114,7 @@ type CreateUserRequest struct {
 	VerifyToken     string
 	PlainPassword   string
 	ConfirmPassword string
+	Now             time.Time
 }
 
 func CreateUser(req CreateUserRequest) (User, error) {
@@ -149,10 +152,12 @@ func CreateUser(req CreateUserRequest) (User, error) {
 		PasswordHash: hashedPassword,
 		Status:       UserStatusUnverified,
 		VerifyToken:  req.VerifyToken,
+		CreatedAt:    req.Now,
+		UpdatedAt:    req.Now,
 	}, nil
 }
 
-func (user User) VerifyStatus(verifyToken string) (User, error) {
+func (user User) VerifyStatus(verifyToken string, now time.Time) (User, error) {
 	if user.Status == UserStatusVerified {
 		return user, fmt.Errorf("user already verified")
 	}
@@ -162,6 +167,7 @@ func (user User) VerifyStatus(verifyToken string) (User, error) {
 	}
 
 	user.Status = UserStatusVerified
+	user.UpdatedAt = now
 	return user, nil
 }
 

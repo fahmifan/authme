@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/securecookie"
 
+	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )
 
@@ -29,13 +30,7 @@ func Stop(ctx context.Context) {
 }
 
 // use all default implementation
-func RunPSQLBackend() error {
-	db, err := sql.Open("postgres", "postgres://root:root@localhost:5432/authme?sslmode=disable")
-	if err != nil {
-		return fmt.Errorf("run: open db: %w", err)
-	}
-	defer db.Close()
-
+func RunPSQLBackend(db *sql.DB) error {
 	if err := psql.MigrateUp(db); err != nil {
 		return fmt.Errorf("run: migrate up: %w", err)
 	}
@@ -49,14 +44,8 @@ func RunPSQLBackend() error {
 }
 
 // use all default implementation
-func RunSQLiteBackend() error {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		return fmt.Errorf("run: open db: %w", err)
-	}
-	defer db.Close()
-
-	if err := psql.MigrateUp(db); err != nil {
+func RunSQLiteBackend(db *sql.DB) error {
+	if err := sqlite.MigrateUp(db); err != nil {
 		return fmt.Errorf("run: migrate up: %w", err)
 	}
 
@@ -110,23 +99,6 @@ func run(db *sql.DB, backend *Backend) error {
 		SessionReadWriter:    backend.SessionReadWriter,
 	})
 
-	cookieAuthHandler := httphandler.NewCookieAuthHandler(httphandler.NewCookieAuthHandlerArg{
-		RoutePrefix:          "/cookie",
-		AccountHandler:       accountHandler,
-		CookieDomain:         "localhost",
-		CookieSecret:         securecookie.GenerateRandomKey(16),
-		SecureCookie:         true,
-		GUIDGenerator:        backend.GUIDGenerator,
-		UserReadWriter:       backend.UserReadWriter,
-		RetryCountReadWriter: backend.RetryCountReadWriter,
-		SessionReadWriter:    backend.SessionReadWriter,
-	})
-
-	cookieRouter, err := cookieAuthHandler.CookieAuthRouter()
-	if err != nil {
-		return fmt.Errorf("run: router: %w", err)
-	}
-	cookieMiddleware := cookieAuthHandler.Middleware()
 	jwtMiddleware := jwtAuthHandler.Middleware()
 
 	restRouter, err := jwtAuthHandler.JWTAuthRouter()
@@ -135,14 +107,10 @@ func run(db *sql.DB, backend *Backend) error {
 	}
 
 	router := chi.NewMux()
-	router.Handle("/cookie*", cookieRouter)
 	router.Handle("/rest*", restRouter)
 
 	router.Group(func(r chi.Router) {
-		r.With(
-			cookieMiddleware.SetAuthUserToCtx(),
-			cookieMiddleware.Authenticate(),
-		).Get("/private-cookie", handlePrivateRoute)
+		r.With().Get("/private-cookie", handlePrivateRoute)
 		r.With(jwtMiddleware.Authenticate()).Get("/private-jwt", handlePrivateRoute)
 	})
 

@@ -23,8 +23,8 @@ WHERE id = @id RETURNING *;
 SELECT * FROM user_sessions WHERE token = $1;
 
 -- name: InsertSession :one
-INSERT INTO user_sessions (id, user_id, token, token_expired_at)
-VALUES (@id, @user_id, @token, @token_expired_at)
+INSERT INTO user_sessions (id, user_id, token, token_expired_at, created_at, updated_at)
+VALUES (@id, @user_id, @token, @token_expired_at, @created_at, @updated_at)
 RETURNING *;
 
 -- name: UpdateSession :one
@@ -39,8 +39,8 @@ WHERE id = @id RETURNING *;
 SELECT * FROM user_retry_counts WHERE user_id = $1 LIMIT 1;
 
 -- name: InsertUserRetryCount :one
-INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at)
-VALUES (@id, @user_id, @retry_count, @last_retry_at)
+INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at, created_at)
+VALUES (@id, @user_id, @retry_count, @last_retry_at, @created_at)
 RETURNING *;
 
 -- name: UpdateUserRetryCount :one

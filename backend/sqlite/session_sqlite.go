@@ -45,11 +45,13 @@ func (rw SessionReadWriter) FindByToken(ctx context.Context, tx authme.DBTX, tok
 
 func userSessionFromSQL(xsess sqlcs.User) auth.UserSession {
 	return auth.UserSession{
-		GUID:   xsess.ID,
-		PID:    xsess.Email,
-		Email:  xsess.Email,
-		Name:   xsess.Name,
-		Status: authme.UserStatus(xsess.Status),
+		GUID:      xsess.ID,
+		PID:       xsess.Email,
+		Email:     xsess.Email,
+		Name:      xsess.Name,
+		Status:    authme.UserStatus(xsess.Status),
+		CreatedAt: xsess.CreatedAt,
+		UpdatedAt: xsess.UpdatedAt,
 	}
 }
 
@@ -70,6 +72,8 @@ func (rw SessionReadWriter) Create(ctx context.Context, tx authme.DBTX, sess aut
 		UserID:         sess.User.GUID,
 		Token:          sess.Token,
 		TokenExpiredAt: sess.TokenExpiredAt,
+		CreatedAt:      sess.User.CreatedAt,
+		UpdatedAt:      sess.User.UpdatedAt,
 	})
 	if err != nil {
 		return auth.Session{}, fmt.Errorf("SessionReadWriter: InsertSession: %w", err)

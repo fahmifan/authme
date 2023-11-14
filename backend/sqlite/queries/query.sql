@@ -1,8 +1,8 @@
 -- name: FindUserByEmail :one
-SELECT * FROM users WHERE email = ?;
+SELECT * FROM users WHERE email = @email;
 
 -- name: FindUserByID :one
-SELECT * FROM users WHERE id = ?;
+SELECT * FROM users WHERE id = @id;
 
 -- name: InsertUser :one
 INSERT INTO users (id, email, "name", "status",  password_hash, verify_token, created_at, updated_at)
@@ -23,8 +23,8 @@ WHERE id = @id RETURNING *;
 SELECT * FROM user_sessions WHERE token = ?;
 
 -- name: InsertSession :one
-INSERT INTO user_sessions (id, user_id, token, token_expired_at)
-VALUES (@id, @user_id, @token, @token_expired_at)
+INSERT INTO user_sessions (id, user_id, token, token_expired_at, created_at, updated_at)
+VALUES (@id, @user_id, @token, @token_expired_at, @created_at, @updated_at)
 RETURNING *;
 
 -- name: UpdateSession :one
@@ -39,8 +39,8 @@ WHERE id = @id RETURNING *;
 SELECT * FROM user_retry_counts WHERE user_id = ? LIMIT 1;
 
 -- name: InsertUserRetryCount :one
-INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at)
-VALUES (@id, @user_id, @retry_count, @last_retry_at)
+INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at, created_at)
+VALUES (@id, @user_id, @retry_count, @last_retry_at, @created_at)
 RETURNING *;
 
 -- name: UpdateUserRetryCount :one

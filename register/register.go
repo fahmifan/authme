@@ -7,6 +7,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fahmifan/authme"
 	"github.com/matcornic/hermes/v2"
@@ -16,10 +17,6 @@ type RegisterMailComposer interface {
 	ComposeSubject(user authme.User) string
 	ComposeBody(user authme.User, verificationBaseURL string) (string, error)
 	Sender() string
-}
-
-type GUIDGenerator interface {
-	Generate() string
 }
 
 type User struct {
@@ -39,7 +36,7 @@ type Register struct {
 	passwordHasher      authme.PasswordHasher
 	mailer              authme.Mailer
 	mailComposer        RegisterMailComposer
-	guideGenerator      GUIDGenerator
+	guideGenerator      authme.GUIDGenerator
 }
 
 type NewRegisterArgs struct {
@@ -48,7 +45,7 @@ type NewRegisterArgs struct {
 	PasswordHasher      authme.PasswordHasher
 	Mailer              authme.Mailer
 	MailComposer        RegisterMailComposer
-	GUIDGenerator       GUIDGenerator
+	GUIDGenerator       authme.GUIDGenerator
 }
 
 func NewRegister(arg NewRegisterArgs) Register {
@@ -145,7 +142,7 @@ func (register Register) VerifyRegistration(ctx context.Context, tx *sql.DB, req
 			return fmt.Errorf("VerifyRegistration: find user: %w", err)
 		}
 
-		user, err = user.VerifyStatus(req.VerifyToken)
+		user, err = user.VerifyStatus(req.VerifyToken, time.Now())
 		if err != nil {
 			return fmt.Errorf("VerifyRegistration: verify status: %w", err)
 		}

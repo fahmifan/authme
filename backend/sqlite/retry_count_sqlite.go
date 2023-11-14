@@ -36,6 +36,7 @@ func (rw RetryCountReadWriter) GetOrCreate(ctx context.Context, tx authme.DBTX, 
 			ID:         guid,
 			UserID:     user.GUID,
 			RetryCount: 0,
+			CreatedAt:  time.Now(),
 		})
 		if err != nil {
 			return authme.RetryCount{}, fmt.Errorf("RetryCountReadWriter: GetOrCreate: insert: %w", err)

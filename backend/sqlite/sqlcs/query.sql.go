@@ -30,7 +30,7 @@ func (q *Queries) FindSessionByToken(ctx context.Context, token string) (UserSes
 }
 
 const findUserByEmail = `-- name: FindUserByEmail :one
-SELECT id, email, "name", password_hash, verify_token, "status", last_login_at, archived, created_at, updated_at FROM users WHERE email = ?
+SELECT id, email, "name", password_hash, verify_token, "status", last_login_at, archived, created_at, updated_at FROM users WHERE email = ?1
 `
 
 func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, error) {
@@ -52,7 +52,7 @@ func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, erro
 }
 
 const findUserByID = `-- name: FindUserByID :one
-SELECT id, email, "name", password_hash, verify_token, "status", last_login_at, archived, created_at, updated_at FROM users WHERE id = ?
+SELECT id, email, "name", password_hash, verify_token, "status", last_login_at, archived, created_at, updated_at FROM users WHERE id = ?1
 `
 
 func (q *Queries) FindUserByID(ctx context.Context, id string) (User, error) {
@@ -91,8 +91,8 @@ func (q *Queries) FindUserRetryCountByUserID(ctx context.Context, userID string)
 }
 
 const insertSession = `-- name: InsertSession :one
-INSERT INTO user_sessions (id, user_id, token, token_expired_at)
-VALUES (?1, ?2, ?3, ?4)
+INSERT INTO user_sessions (id, user_id, token, token_expired_at, created_at, updated_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
 RETURNING id, user_id, token, token_expired_at, created_at, updated_at
 `
 
@@ -101,6 +101,8 @@ type InsertSessionParams struct {
 	UserID         string
 	Token          string
 	TokenExpiredAt time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (UserSession, error) {
@@ -109,6 +111,8 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (U
 		arg.UserID,
 		arg.Token,
 		arg.TokenExpiredAt,
+		arg.CreatedAt,
+		arg.UpdatedAt,
 	)
 	var i UserSession
 	err := row.Scan(
@@ -167,8 +171,8 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 }
 
 const insertUserRetryCount = `-- name: InsertUserRetryCount :one
-INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at)
-VALUES (?1, ?2, ?3, ?4)
+INSERT INTO user_retry_counts (id, user_id, retry_count, last_retry_at, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5)
 RETURNING id, user_id, retry_count, last_retry_at, created_at
 `
 
@@ -177,6 +181,7 @@ type InsertUserRetryCountParams struct {
 	UserID      string
 	RetryCount  int64
 	LastRetryAt sql.NullTime
+	CreatedAt   time.Time
 }
 
 func (q *Queries) InsertUserRetryCount(ctx context.Context, arg InsertUserRetryCountParams) (UserRetryCount, error) {
@@ -185,6 +190,7 @@ func (q *Queries) InsertUserRetryCount(ctx context.Context, arg InsertUserRetryC
 		arg.UserID,
 		arg.RetryCount,
 		arg.LastRetryAt,
+		arg.CreatedAt,
 	)
 	var i UserRetryCount
 	err := row.Scan(

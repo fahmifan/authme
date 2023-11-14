@@ -142,6 +142,8 @@ func (handler *JWTAuthHandler) handleAuth(jwtauther auth.JWTAuther) http.Handler
 			return
 		}
 
+		setCookieRefreshToken(w, handler.SecureCookie, authRes)
+
 		res := JWTAuthResponse{
 			AccessToken:   authRes.AccessToken,
 			ExpiredAt:     authRes.ExpiredAt,
@@ -170,6 +172,8 @@ func (handler *JWTAuthHandler) handleRefreshingToken(jwtauther auth.JWTAuther) h
 			})
 			return
 		}
+
+		setCookieRefreshToken(w, handler.SecureCookie, authRes)
 
 		res := JWTAuthResponse{
 			AccessToken:   authRes.AccessToken,

@@ -39,10 +39,12 @@ type UserSession struct {
 	// GUID is global unique identifier can be UUID, Integer, etc.
 	GUID string
 	// PID is personal identifier can be email, username etc.
-	PID    string
-	Email  string
-	Name   string
-	Status authme.UserStatus
+	PID       string
+	Email     string
+	Name      string
+	Status    authme.UserStatus
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Session struct {
@@ -56,11 +58,13 @@ func CreateSession(user authme.User, now time.Time, guid string) (Session, error
 	sess := Session{
 		GUID: guid,
 		User: UserSession{
-			GUID:   user.GUID,
-			PID:    user.PID,
-			Email:  user.Email,
-			Name:   user.Name,
-			Status: user.Status,
+			GUID:      user.GUID,
+			PID:       user.PID,
+			Email:     user.Email,
+			Name:      user.Name,
+			Status:    user.Status,
+			CreatedAt: now,
+			UpdatedAt: now,
 		},
 	}
 

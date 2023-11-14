@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   "name" TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   verify_token TEXT NOT NULL,
-  "status" VARCHAR(64) NOT NULL,
+  "status" TEXT NOT NULL,
   last_login_at TIMESTAMP,
   archived boolean NOT NULL DEFAULT false,
 

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/fahmifan/authme"
 	"github.com/fahmifan/authme/backend/psql/sqlcs"
@@ -48,8 +47,6 @@ func (psql UserReadWriter) FindByPID(ctx context.Context, tx authme.DBTX, pid st
 }
 
 func (psql UserReadWriter) Create(ctx context.Context, tx authme.DBTX, user authme.User) (_ authme.User, err error) {
-	now := time.Now()
-
 	var guid uuid.UUID
 	if user.GUID == "" {
 		guid = uuid.New()
@@ -64,8 +61,8 @@ func (psql UserReadWriter) Create(ctx context.Context, tx authme.DBTX, user auth
 		ID:           guid,
 		Email:        user.PID,
 		PasswordHash: user.PasswordHash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
 		Name:         user.Name,
 		Status:       string(user.Status),
 		VerifyToken:  user.VerifyToken,

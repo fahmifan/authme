@@ -27,6 +27,10 @@ const (
 	PathCSRFToken      = "/auth/csrf"
 )
 
+type Ctx string
+
+const UserCtxKey Ctx = "user_ctx_key"
+
 type HttpError struct {
 	Err  string `json:"error"`
 	Code int    `json:"code"`

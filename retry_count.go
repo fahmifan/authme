@@ -26,6 +26,7 @@ type RetryCount struct {
 	MaxCount     int
 	LastRetryAt  time.Time
 	LockDuration time.Duration
+	CreatedAt    time.Time
 }
 
 // CanAuth returns true if user can do authentication.
